@@ -16,34 +16,34 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
-import { TODAY, useClinic } from "@/context/ClinicProvider"
+import { usePatient } from "@/hooks/usePatients"
+import { todayISO } from "@/lib/clinic-data"
 
-export function AddTreatmentDialog({ patientId }: { patientId: string }) {
-  const { addTreatment } = useClinic()
+export function AddTreatmentDialog({ patientId }: { patientId: number }) {
+  const { addTreatment, isAddingTreatment } = usePatient(patientId)
   const [open, setOpen] = React.useState(false)
 
-  const [fecha, setFecha] = React.useState(TODAY)
+  const [fecha, setFecha] = React.useState(todayISO)
   const [tratamiento, setTratamiento] = React.useState("")
   const [costo, setCosto] = React.useState("")
   const [aCuenta, setACuenta] = React.useState("")
 
   function reset() {
-    setFecha(TODAY)
+    setFecha(todayISO())
     setTratamiento("")
     setCosto("")
     setACuenta("")
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const costoNum = Number(costo) || 0
-    const aCuentaNum = Math.min(Number(aCuenta) || 0, costoNum)
-    if (!tratamiento || costoNum <= 0) return
-    addTreatment(patientId, {
+    if (!tratamiento.trim() || costoNum <= 0 || isAddingTreatment) return
+    await addTreatment({
       fecha,
-      tratamiento,
+      tratamiento: tratamiento.trim(),
       costo: costoNum,
-      aCuenta: aCuentaNum,
+      aCuenta: Math.min(Number(aCuenta) || 0, costoNum),
     })
     reset()
     setOpen(false)
@@ -123,8 +123,16 @@ export function AddTreatmentDialog({ patientId }: { patientId: string }) {
           </FieldGroup>
 
           <DialogFooter>
-            <DialogClose render={<Button type="button" variant="outline">Cancelar</Button>} />
-            <Button type="submit">Guardar</Button>
+            <DialogClose
+              render={
+                <Button type="button" variant="outline">
+                  Cancelar
+                </Button>
+              }
+            />
+            <Button type="submit" disabled={isAddingTreatment}>
+              {isAddingTreatment ? "Guardando..." : "Guardar"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

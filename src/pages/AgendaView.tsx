@@ -1,45 +1,52 @@
 "use client"
 
-import * as React from "react"
-import { Search, Clock, CalendarDays, User } from "lucide-react"
+import { Link } from "react-router"
+import { ChevronLeft, ChevronRight, Loader2, Search, Trash2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
 } from "@/components/ui/input-group"
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty"
-
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { NewAppointmentDialog } from "@/components/custom/new-appointment-dialog"
+import { useAgenda, type AgendaDay } from "@/hooks/useAgenda"
 import {
   STATUS_META,
-  formatDayName,
-  formatLongDate,
-  parseISO,
+  dayOfMonth,
+  formatWeekRange,
+  shortDayName,
 } from "@/lib/clinic-data"
-import { TODAY, useClinic } from "@/context/ClinicProvider"
-import { NewAppointmentDialog } from "@/components/custom/new-appointment-dialog"
+import { cn } from "@/lib/utils"
+import type { Appointment } from "@/types/clinic"
 
 export function AgendaView() {
-  const { appointments, getPatient } = useClinic()
-  const [query, setQuery] = React.useState("")
-
-  const upcoming = React.useMemo(() => {
-    const today = parseISO(TODAY).getTime()
-    return appointments
-      .map((a) => ({ appt: a, patient: getPatient(a.patientId) }))
-      .filter(({ appt, patient }) => {
-        if (!patient) return false
-        if (parseISO(appt.date).getTime() < today) return false
-        return patient.name.toLowerCase().includes(query.trim().toLowerCase())
-      })
-      .sort((a, b) =>
-        a.appt.date === b.appt.date
-          ? a.appt.time.localeCompare(b.appt.time)
-          : a.appt.date.localeCompare(b.appt.date),
-      )
-  }, [appointments, getPatient, query])
+  const {
+    weekDays,
+    outOfWeek,
+    appointments,
+    year,
+    week,
+    search,
+    setSearch,
+    goToPreviousWeek,
+    goToNextWeek,
+    goToCurrentWeek,
+    isLoading,
+    isFetching,
+    error,
+    deleteAppointment,
+    isDeleting,
+  } = useAgenda()
 
   return (
     <div className="flex flex-col gap-6">
@@ -49,86 +56,234 @@ export function AgendaView() {
             Agenda
           </h1>
           <p className="text-sm text-muted-foreground">
-            Próximas citas programadas en el consultorio.
+            Citas de la semana en el consultorio.
           </p>
         </div>
         <NewAppointmentDialog />
       </div>
 
-      <InputGroup className="max-w-md">
-        <InputGroupAddon>
-          <Search />
-        </InputGroupAddon>
-        <InputGroupInput
-          placeholder="Buscar paciente por nombre..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          aria-label="Buscar paciente"
-        />
-      </InputGroup>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <InputGroup className="max-w-md">
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
+            placeholder="Buscar por paciente o motivo..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Buscar cita"
+          />
+        </InputGroup>
 
-      {upcoming.length === 0 ? (
-        <Empty className="rounded-xl border border-dashed">
-          <EmptyHeader>
-            <EmptyTitle>Sin citas próximas</EmptyTitle>
-            <EmptyDescription>
-              No se encontraron citas que coincidan con tu búsqueda.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={goToPreviousWeek}
+            aria-label="Semana anterior"
+          >
+            <ChevronLeft />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={goToCurrentWeek}
+            className="min-w-56"
+            title="Ir a la semana actual"
+          >
+            {formatWeekRange(year, week)}
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={goToNextWeek}
+            aria-label="Semana siguiente"
+          >
+            <ChevronRight />
+          </Button>
+        </div>
+      </div>
+
+      {error && (
+        <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {error instanceof Error
+            ? error.message
+            : "No se pudieron cargar las citas."}
+        </p>
+      )}
+
+      {isLoading ? (
+        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          Cargando citas...
+        </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {upcoming.map(({ appt, patient }) => {
+        <div
+          className={cn(
+            "rounded-xl border border-border/70 transition-opacity",
+            isFetching && "opacity-60",
+          )}
+        >
+          <Table className="min-w-[980px] table-fixed">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                {weekDays.map((day) => (
+                  <TableHead
+                    key={day.date}
+                    aria-current={day.isToday ? "date" : undefined}
+                    className={cn(
+                      "h-auto w-1/7 border-r border-border/70 px-3 py-2.5 text-center last:border-r-0",
+                      day.isToday ? "bg-primary/10" : "bg-muted/40",
+                    )}
+                  >
+                    <div className="flex flex-col items-center gap-0.5">
+                      <span
+                        className={cn(
+                          "text-xs font-medium uppercase tracking-wide",
+                          day.isToday ? "text-primary" : "text-muted-foreground",
+                        )}
+                      >
+                        {shortDayName(day.date)}
+                      </span>
+                      <span
+                        className={cn(
+                          "flex size-7 items-center justify-center rounded-full text-sm font-semibold tabular-nums",
+                          day.isToday
+                            ? "bg-primary text-primary-foreground"
+                            : "text-foreground",
+                        )}
+                      >
+                        {dayOfMonth(day.date)}
+                      </span>
+                    </div>
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+
+            <TableBody>
+              <TableRow className="hover:bg-transparent">
+                {weekDays.map((day) => (
+                  <DayColumn
+                    key={day.date}
+                    day={day}
+                    isDeleting={isDeleting}
+                    onDelete={deleteAppointment}
+                  />
+                ))}
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {!isLoading && appointments.length === 0 && (
+        <p className="text-center text-sm text-muted-foreground">
+          No hay citas para esta semana
+          {search.trim() ? ` que coincidan con “${search.trim()}”` : ""}.
+        </p>
+      )}
+
+      {outOfWeek.length > 0 && (
+        <div className="rounded-lg border border-dashed border-border/70 px-4 py-3 text-sm">
+          <p className="mb-2 font-medium text-foreground">
+            Citas fuera de los días mostrados
+          </p>
+          <ul className="flex flex-col gap-1 text-muted-foreground">
+            {outOfWeek.map((appt) => (
+              <li key={appt.id}>
+                {appt.date} · {appt.time} h ·{" "}
+                <PatientLink appointment={appt} /> — {appt.motivo}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DayColumn({
+  day,
+  isDeleting,
+  onDelete,
+}: {
+  day: AgendaDay
+  isDeleting: boolean
+  onDelete: (id: string) => void
+}) {
+  return (
+    <TableCell
+      className={cn(
+        "w-1/7 border-r border-border/70 p-2 align-top whitespace-normal last:border-r-0",
+        day.isToday && "bg-primary/5",
+      )}
+    >
+      {day.items.length === 0 ? (
+        // `min-height` en un <td> lo ignora el navegador: va en el contenido.
+        <div className="flex min-h-32 items-center justify-center">
+          <p className="text-xs text-muted-foreground/70">Sin citas</p>
+        </div>
+      ) : (
+        <div className="flex min-h-32 flex-col gap-2">
+          {day.items.map((appt) => {
             const status = STATUS_META[appt.status]
             return (
-              <Card
+              <article
                 key={appt.id}
-                className="overflow-hidden border-border/70 transition-shadow hover:shadow-md"
+                className="group flex flex-col gap-1.5 rounded-lg border border-border/70 bg-card p-2.5 transition-shadow hover:shadow-sm"
               >
-                <CardContent className="flex flex-col gap-4 p-0">
-                  <div className="flex items-center justify-between gap-3 bg-primary/5 px-5 py-3">
-                    <div className="flex items-center gap-2 text-primary">
-                      <CalendarDays className="size-4" />
-                      <span className="text-sm font-medium capitalize">
-                        {formatDayName(appt.date)}
-                      </span>
-                    </div>
-                    <Badge className={status.className}>{status.label}</Badge>
-                  </div>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-sm font-semibold tabular-nums text-foreground">
+                    {appt.time}
+                  </span>
+                  <Badge className={cn(status.className, "text-[10px]")}>
+                    {status.label}
+                  </Badge>
+                </div>
 
-                  <div className="flex flex-col gap-4 px-5 pb-5">
-                    <div className="flex items-center justify-between text-sm text-muted-foreground">
-                      <span>{formatLongDate(appt.date)}</span>
-                      <span className="flex items-center gap-1.5 font-medium text-foreground">
-                        <Clock className="size-4 text-primary" />
-                        {appt.time} h
-                      </span>
-                    </div>
+                <PatientLink appointment={appt} />
 
-                    <div className="flex items-center gap-3">
-                      <div className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                        <User className="size-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-foreground">
-                          {patient!.name}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {patient!.age} años · {patient!.gender}
-                        </p>
-                      </div>
-                    </div>
+                <p className="line-clamp-2 text-xs text-muted-foreground">
+                  {appt.motivo}
+                </p>
 
-                    <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
-                      {appt.motivo}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  aria-label={`Eliminar cita de ${appt.patientName || "paciente"}`}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "¿Eliminar esta cita? La acción no se puede deshacer.",
+                      )
+                    ) {
+                      onDelete(appt.id)
+                    }
+                  }}
+                  className="flex items-center gap-1 self-end text-xs text-muted-foreground opacity-0 transition-opacity hover:text-rose-600 focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+                >
+                  <Trash2 className="size-3.5" />
+                  Eliminar
+                </button>
+              </article>
             )
           })}
         </div>
       )}
-    </div>
+    </TableCell>
+  )
+}
+
+/** El nombre del paciente abre su expediente. */
+function PatientLink({ appointment }: { appointment: Appointment }) {
+  return (
+    <Link
+      to={`/pacientes/${appointment.patientId}`}
+      className="truncate text-sm font-medium text-primary underline-offset-2 hover:underline"
+      title={appointment.patientName || `Paciente #${appointment.patientId}`}
+    >
+      {appointment.patientName || `Paciente #${appointment.patientId}`}
+    </Link>
   )
 }

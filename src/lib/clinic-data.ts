@@ -1,37 +1,9 @@
-export type AppointmentStatus =
-  | "confirmada"
-  | "pendiente"
-  | "completada"
-  | "cancelada"
-
-export type Treatment = {
-  id: string
-  fecha: string // ISO yyyy-mm-dd
-  tratamiento: string
-  costo: number
-  aCuenta: number
-}
-
-export type Appointment = {
-  id: string
-  patientId: string
-  date: string // ISO yyyy-mm-dd
-  time: string // HH:mm
-  status: AppointmentStatus
-  motivo: string
-}
-
-export type Patient = {
-  id: string
-  name: string
-  age: number
-  gender: "Femenino" | "Masculino"
-  phone: string
-  email: string
-  address: string
-  notes: string
-  treatments: Treatment[]
-}
+import type {
+  Appointment,
+  AppointmentStatus,
+  Patient,
+  Treatment,
+} from "@/types/clinic"
 
 export const STATUS_META: Record<
   AppointmentStatus,
@@ -39,25 +11,25 @@ export const STATUS_META: Record<
 > = {
   confirmada: {
     label: "Confirmada",
-    className:
-      "border-transparent bg-primary/10 text-primary",
+    className: "border-transparent bg-primary/10 text-primary",
   },
   pendiente: {
     label: "Pendiente",
-    className:
-      "border-transparent bg-amber-100 text-amber-700",
+    className: "border-transparent bg-amber-100 text-amber-700",
   },
   completada: {
     label: "Completada",
-    className:
-      "border-transparent bg-emerald-100 text-emerald-700",
+    className: "border-transparent bg-emerald-100 text-emerald-700",
   },
   cancelada: {
     label: "Cancelada",
-    className:
-      "border-transparent bg-rose-100 text-rose-700",
+    className: "border-transparent bg-rose-100 text-rose-700",
   },
 }
+
+export const APPOINTMENT_STATUSES = Object.keys(
+  STATUS_META,
+) as AppointmentStatus[]
 
 // ---- Formatting helpers (es-MX) ----
 
@@ -84,10 +56,39 @@ const MONTHS_SHORT = [
   "Dic",
 ]
 
+const DAYS_SHORT = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
+
+const MONTHS_LONG = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+]
+
 /** Parse an ISO date string as a local date (avoids TZ shifting). */
 export function parseISO(iso: string): Date {
   const [y, m, d] = iso.split("-").map(Number)
   return new Date(y, (m ?? 1) - 1, d ?? 1)
+}
+
+/** `Date` -> `yyyy-mm-dd` using the local calendar day (no TZ shifting). */
+export function toISODateString(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+/** Today as `yyyy-mm-dd` in the user's timezone. */
+export function todayISO(): string {
+  return toISODateString(new Date())
 }
 
 export function formatDayName(iso: string): string {
@@ -110,128 +111,130 @@ export function formatShortDate(iso: string): string {
   return `${date.getDate()} ${MONTHS_SHORT[date.getMonth()]}`
 }
 
-export function monthKey(iso: string): string {
-  const date = parseISO(iso)
-  return `${date.getFullYear()}-${date.getMonth()}`
+export function formatMonthYear(year: number, month: number): string {
+  return `${MONTHS_LONG[month - 1]} ${year}`
+}
+
+/** `Lun`, `Mar`, ... para el encabezado del calendario. */
+export function shortDayName(iso: string): string {
+  return DAYS_SHORT[parseISO(iso).getDay()]
+}
+
+/** Día del mes (1-31) de una fecha ISO. */
+export function dayOfMonth(iso: string): number {
+  return parseISO(iso).getDate()
+}
+
+// ---- Semanas ISO (lunes a domingo), como las espera `GET /citas?week=` ----
+
+/** Lunes = 0 ... domingo = 6. */
+function isoDayIndex(date: Date): number {
+  return (date.getDay() + 6) % 7
+}
+
+/**
+ * Semana ISO y su año-semana. Ojo: a inicios de enero el año-semana puede ser
+ * el año calendario anterior (p. ej. 2027-01-01 cae en la semana 53 de 2026),
+ * y es ese par (año-semana, semana) el que hay que mandar al backend.
+ */
+export function getISOWeek(date: Date): { year: number; week: number } {
+  // El jueves de la semana determina a qué año-semana pertenece.
+  const thursday = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate() - isoDayIndex(date) + 3,
+  )
+  const year = thursday.getFullYear()
+  const jan4 = new Date(year, 0, 4)
+  const firstThursday = new Date(
+    year,
+    0,
+    4 - isoDayIndex(jan4) + 3,
+  )
+  const week =
+    1 +
+    Math.round(
+      (thursday.getTime() - firstThursday.getTime()) / (7 * 24 * 60 * 60 * 1000),
+    )
+  return { year, week }
+}
+
+/** Lunes de la semana ISO indicada. */
+export function startOfISOWeek(year: number, week: number): Date {
+  const jan4 = new Date(year, 0, 4)
+  return new Date(year, 0, 4 - isoDayIndex(jan4) + (week - 1) * 7)
+}
+
+/** Las 7 fechas (`yyyy-mm-dd`, lunes a domingo) de una semana ISO. */
+export function isoWeekDates(year: number, week: number): string[] {
+  const monday = startOfISOWeek(year, week)
+  return Array.from({ length: 7 }, (_, i) =>
+    toISODateString(
+      new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i),
+    ),
+  )
+}
+
+/** "1 – 7 de septiembre de 2026" / "29 de junio – 5 de julio de 2026". */
+export function formatWeekRange(year: number, week: number): string {
+  const dates = isoWeekDates(year, week)
+  const from = parseISO(dates[0])
+  const to = parseISO(dates[6])
+  const sameMonth = from.getMonth() === to.getMonth()
+  const sameYear = from.getFullYear() === to.getFullYear()
+
+  const left = sameMonth
+    ? `${from.getDate()}`
+    : sameYear
+      ? `${from.getDate()} de ${MONTHS_LONG[from.getMonth()].toLowerCase()}`
+      : `${from.getDate()} de ${MONTHS_LONG[from.getMonth()].toLowerCase()} de ${from.getFullYear()}`
+
+  return `${left} – ${to.getDate()} de ${MONTHS_LONG[to.getMonth()].toLowerCase()} de ${to.getFullYear()}`
 }
 
 export function monthLabel(iso: string): string {
-  const date = parseISO(iso)
-  return MONTHS_SHORT[date.getMonth()]
+  return MONTHS_SHORT[parseISO(iso).getMonth()]
 }
 
 export function treatmentSaldo(t: Treatment): number {
   return Math.max(0, t.costo - t.aCuenta)
 }
 
-// ---- Seed data ----
+export function treatmentsTotal(treatments: Treatment[]): number {
+  return treatments.reduce((sum, t) => sum + t.costo, 0)
+}
 
-export const initialPatients: Patient[] = [
-  {
-    id: "p1",
-    name: "María González Ruiz",
-    age: 34,
-    gender: "Femenino",
-    phone: "+52 55 1234 5678",
-    email: "maria.gonzalez@email.com",
-    address: "Av. Reforma 210, CDMX",
-    notes: "Alergia a la penicilina. Sensibilidad dental moderada.",
-    treatments: [
-      { id: "t1", fecha: "2026-03-12", tratamiento: "Limpieza dental", costo: 800, aCuenta: 800 },
-      { id: "t2", fecha: "2026-05-20", tratamiento: "Resina (2 piezas)", costo: 2400, aCuenta: 1500 },
-      { id: "t3", fecha: "2026-07-02", tratamiento: "Blanqueamiento", costo: 3500, aCuenta: 2000 },
-    ],
-  },
-  {
-    id: "p2",
-    name: "Carlos Ramírez Soto",
-    age: 45,
-    gender: "Masculino",
-    phone: "+52 55 2345 6789",
-    email: "carlos.ramirez@email.com",
-    address: "Calle Pino 45, Guadalajara",
-    notes: "Bruxismo. Uso de guarda nocturna.",
-    treatments: [
-      { id: "t4", fecha: "2026-02-08", tratamiento: "Extracción muela", costo: 1800, aCuenta: 1800 },
-      { id: "t5", fecha: "2026-06-15", tratamiento: "Corona de porcelana", costo: 6500, aCuenta: 3000 },
-    ],
-  },
-  {
-    id: "p3",
-    name: "Ana Lucía Torres",
-    age: 28,
-    gender: "Femenino",
-    phone: "+52 55 3456 7890",
-    email: "ana.torres@email.com",
-    address: "Blvd. Sur 900, Monterrey",
-    notes: "Ortodoncia en curso. Ajuste mensual.",
-    treatments: [
-      { id: "t6", fecha: "2026-01-18", tratamiento: "Ortodoncia (colocación)", costo: 12000, aCuenta: 6000 },
-      { id: "t7", fecha: "2026-04-18", tratamiento: "Ajuste ortodoncia", costo: 700, aCuenta: 700 },
-      { id: "t8", fecha: "2026-07-18", tratamiento: "Ajuste ortodoncia", costo: 700, aCuenta: 0 },
-    ],
-  },
-  {
-    id: "p4",
-    name: "Jorge Mendoza Vera",
-    age: 52,
-    gender: "Masculino",
-    phone: "+52 55 4567 8901",
-    email: "jorge.mendoza@email.com",
-    address: "Av. Juárez 12, Puebla",
-    notes: "Hipertensión controlada.",
-    treatments: [
-      { id: "t9", fecha: "2026-03-30", tratamiento: "Endodoncia", costo: 4500, aCuenta: 4500 },
-      { id: "t10", fecha: "2026-06-28", tratamiento: "Limpieza dental", costo: 800, aCuenta: 800 },
-    ],
-  },
-  {
-    id: "p5",
-    name: "Sofía Herrera Lara",
-    age: 19,
-    gender: "Femenino",
-    phone: "+52 55 5678 9012",
-    email: "sofia.herrera@email.com",
-    address: "Calle Roble 88, Querétaro",
-    notes: "Primera visita. Sin antecedentes relevantes.",
-    treatments: [
-      { id: "t11", fecha: "2026-05-05", tratamiento: "Revisión general", costo: 500, aCuenta: 500 },
-    ],
-  },
-  {
-    id: "p6",
-    name: "Ricardo Peña Flores",
-    age: 41,
-    gender: "Masculino",
-    phone: "+52 55 6789 0123",
-    email: "ricardo.pena@email.com",
-    address: "Av. Central 300, León",
-    notes: "Implante en seguimiento.",
-    treatments: [
-      { id: "t12", fecha: "2026-02-22", tratamiento: "Implante dental", costo: 15000, aCuenta: 8000 },
-      { id: "t13", fecha: "2026-04-10", tratamiento: "Control implante", costo: 600, aCuenta: 600 },
-    ],
-  },
-]
+export function treatmentsSaldo(treatments: Treatment[]): number {
+  return treatments.reduce((sum, t) => sum + treatmentSaldo(t), 0)
+}
 
-export const initialAppointments: Appointment[] = [
-  { id: "a1", patientId: "p1", date: "2026-08-05", time: "09:00", status: "confirmada", motivo: "Continuación resina" },
-  { id: "a2", patientId: "p3", date: "2026-08-05", time: "10:30", status: "confirmada", motivo: "Ajuste ortodoncia" },
-  { id: "a3", patientId: "p2", date: "2026-08-06", time: "12:00", status: "pendiente", motivo: "Prueba de corona" },
-  { id: "a4", patientId: "p5", date: "2026-08-07", time: "16:00", status: "confirmada", motivo: "Limpieza dental" },
-  { id: "a5", patientId: "p4", date: "2026-08-10", time: "11:00", status: "pendiente", motivo: "Revisión endodoncia" },
-  { id: "a6", patientId: "p6", date: "2026-08-12", time: "13:30", status: "confirmada", motivo: "Control de implante" },
-  { id: "a7", patientId: "p1", date: "2026-08-14", time: "09:30", status: "pendiente", motivo: "Blanqueamiento" },
-  { id: "a8", patientId: "p3", date: "2026-07-18", time: "10:00", status: "completada", motivo: "Ajuste ortodoncia" },
-]
+// ---- Aggregations ----
 
-/** Monthly aggregation of sales (treatment cost) for the current year. */
+/** Groups appointments by local `yyyy-mm-dd`, sorted by day and hour. */
+export function groupByDay(
+  appointments: Appointment[],
+): { date: string; items: Appointment[] }[] {
+  const days = new Map<string, Appointment[]>()
+  for (const appt of appointments) {
+    const bucket = days.get(appt.date)
+    if (bucket) bucket.push(appt)
+    else days.set(appt.date, [appt])
+  }
+  return [...days.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, items]) => ({
+      date,
+      items: items.sort((a, b) => a.time.localeCompare(b.time)),
+    }))
+}
+
+/** Monthly aggregation of sales (treatment cost). */
 export function salesByMonth(patients: Patient[]) {
   const totals = new Array(12).fill(0)
   for (const p of patients) {
     for (const t of p.treatments) {
-      const d = parseISO(t.fecha)
-      totals[d.getMonth()] += t.costo
+      if (!t.fecha) continue
+      totals[parseISO(t.fecha).getMonth()] += t.costo
     }
   }
   return totals.map((ventas, i) => ({ mes: MONTHS_SHORT[i], ventas }))
@@ -241,8 +244,8 @@ export function salesByMonth(patients: Patient[]) {
 export function appointmentsByMonth(appointments: Appointment[]) {
   const totals = new Array(12).fill(0)
   for (const a of appointments) {
-    const d = parseISO(a.date)
-    totals[d.getMonth()] += 1
+    if (!a.date) continue
+    totals[parseISO(a.date).getMonth()] += 1
   }
   return totals.map((citas, i) => ({ mes: MONTHS_SHORT[i], citas }))
 }

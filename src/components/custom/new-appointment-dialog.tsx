@@ -17,20 +17,25 @@ import {
 import { Input } from "@/components/ui/input"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import type { AppointmentStatus } from "@/lib/clinic-data"
-import { TODAY, useClinic } from "@/context/ClinicProvider"
+import { useAgenda } from "@/hooks/useAgenda"
+import { usePatients } from "@/hooks/usePatients"
+import { STATUS_META, todayISO } from "@/lib/clinic-data"
+import type { AppointmentStatus } from "@/types/clinic"
 
 const fieldControl =
   "flex h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
 
 export function NewAppointmentDialog() {
-  const { patients, addPatient, addAppointment } = useClinic()
+  const { patients, createPatient } = usePatients()
+  const { createAppointment, isCreating, createError } = useAgenda()
   const [open, setOpen] = React.useState(false)
 
-  const [patientMode, setPatientMode] = React.useState<"existente" | "nuevo">("existente")
+  const [patientMode, setPatientMode] = React.useState<"existente" | "nuevo">(
+    "existente",
+  )
   const [patientId, setPatientId] = React.useState("")
   const [newPatientName, setNewPatientName] = React.useState("")
-  const [date, setDate] = React.useState(TODAY)
+  const [date, setDate] = React.useState(todayISO)
   const [time, setTime] = React.useState("09:00")
   const [status, setStatus] = React.useState<AppointmentStatus>("pendiente")
   const [motivo, setMotivo] = React.useState("")
@@ -39,7 +44,7 @@ export function NewAppointmentDialog() {
     setPatientMode("existente")
     setPatientId("")
     setNewPatientName("")
-    setDate(TODAY)
+    setDate(todayISO())
     setTime("09:00")
     setStatus("pendiente")
     setMotivo("")
@@ -48,20 +53,36 @@ export function NewAppointmentDialog() {
   const canSubmit =
     patientMode === "existente" ? !!patientId : newPatientName.trim().length > 0
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!canSubmit) return
+    if (!canSubmit || isCreating) return
+
+    // El alta rápida crea el expediente mínimo; el resto se completa desde
+    // la ficha del paciente.
     const resolvedPatientId =
       patientMode === "existente"
-        ? patientId
-        : addPatient(newPatientName.trim())
-    addAppointment({
+        ? Number(patientId)
+        : (
+            await createPatient({
+              name: newPatientName.trim(),
+              age: "",
+              gender: "",
+              phone: "",
+              email: "",
+              address: "",
+              cp: "",
+              notes: "",
+            })
+          ).id
+
+    await createAppointment({
       patientId: resolvedPatientId,
       date,
       time,
       status,
-      motivo: motivo || "Consulta general",
+      motivo: motivo.trim() || "Consulta general",
     })
+
     reset()
     setOpen(false)
   }
@@ -169,10 +190,11 @@ export function NewAppointmentDialog() {
                 value={status}
                 onChange={(e) => setStatus(e.target.value as AppointmentStatus)}
               >
-                <option value="pendiente">Pendiente</option>
-                <option value="confirmada">Confirmada</option>
-                <option value="completada">Completada</option>
-                <option value="cancelada">Cancelada</option>
+                {Object.entries(STATUS_META).map(([value, meta]) => (
+                  <option key={value} value={value}>
+                    {meta.label}
+                  </option>
+                ))}
               </select>
             </Field>
 
@@ -185,12 +207,26 @@ export function NewAppointmentDialog() {
                 onChange={(e) => setMotivo(e.target.value)}
               />
             </Field>
+
+            {createError && (
+              <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {createError instanceof Error
+                  ? createError.message
+                  : "No se pudo crear la cita."}
+              </p>
+            )}
           </FieldGroup>
 
           <DialogFooter>
-            <DialogClose render={<Button type="button" variant="outline">Cancelar</Button>} />
-            <Button type="submit" disabled={!canSubmit}>
-              Guardar cita
+            <DialogClose
+              render={
+                <Button type="button" variant="outline">
+                  Cancelar
+                </Button>
+              }
+            />
+            <Button type="submit" disabled={!canSubmit || isCreating}>
+              {isCreating ? "Guardando..." : "Guardar cita"}
             </Button>
           </DialogFooter>
         </form>

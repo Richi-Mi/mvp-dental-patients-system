@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { DollarSign, Stethoscope, Users } from "lucide-react"
+import { DollarSign, Loader2, Stethoscope, Users } from "lucide-react"
 
 import {
   Card,
@@ -25,12 +25,14 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart"
+import { useAgendaYear } from "@/hooks/useAgenda"
+import { usePatientsWithTreatments } from "@/hooks/usePatients"
 import {
   appointmentsByMonth,
   formatCurrency,
   salesByMonth,
+  treatmentsTotal,
 } from "@/lib/clinic-data"
-import { useClinic } from "@/context/ClinicProvider"
 
 const salesConfig = {
   ventas: { label: "Ventas", color: "var(--chart-1)" },
@@ -41,29 +43,32 @@ const apptConfig = {
 } satisfies ChartConfig
 
 export function DashboardView() {
-  const { patients, appointments } = useClinic()
+  const year = new Date().getFullYear()
+  const {
+    patients,
+    total: pacientesTotales,
+    isLoading: loadingPatients,
+    error: patientsError,
+  } = usePatientsWithTreatments()
+  const {
+    appointments,
+    isLoading: loadingAppointments,
+    error: appointmentsError,
+  } = useAgendaYear(year)
 
-  const { ventasTotales, consultasTotales, pacientesTotales } =
-    React.useMemo(() => {
-      const ventas = patients.reduce(
-        (sum, p) => sum + p.treatments.reduce((s, t) => s + t.costo, 0),
-        0,
-      )
-      return {
-        ventasTotales: ventas,
-        consultasTotales: appointments.length,
-        pacientesTotales: patients.length,
-      }
-    }, [patients, appointments])
-
-  const salesData = React.useMemo(
-    () => salesByMonth(patients).slice(0, 8),
+  const ventasTotales = React.useMemo(
+    () => patients.reduce((sum, p) => sum + treatmentsTotal(p.treatments), 0),
     [patients],
   )
+
+  const salesData = React.useMemo(() => salesByMonth(patients), [patients])
   const apptData = React.useMemo(
-    () => appointmentsByMonth(appointments).slice(0, 8),
+    () => appointmentsByMonth(appointments),
     [appointments],
   )
+
+  const isLoading = loadingPatients || loadingAppointments
+  const error = patientsError ?? appointmentsError
 
   const metrics = [
     {
@@ -74,8 +79,8 @@ export function DashboardView() {
     },
     {
       label: "Consultas totales",
-      value: consultasTotales.toString(),
-      hint: "Citas registradas",
+      value: appointments.length.toString(),
+      hint: `Citas registradas en ${year}`,
       icon: Stethoscope,
     },
     {
@@ -88,14 +93,30 @@ export function DashboardView() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Dashboard
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Métricas clave del consultorio.
-        </p>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Dashboard
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Métricas clave del consultorio en {year}.
+          </p>
+        </div>
+        {isLoading && (
+          <span className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Cargando...
+          </span>
+        )}
       </div>
+
+      {error && (
+        <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {error instanceof Error
+            ? error.message
+            : "No se pudieron cargar las métricas."}
+        </p>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         {metrics.map((m) => (
