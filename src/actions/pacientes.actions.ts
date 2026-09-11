@@ -1,12 +1,26 @@
 import { api } from "@/api/client"
 import { ENDPOINTS } from "@/api/endpoints"
-import type { PacienteDTO, UpdatePacientePayload } from "@/api/types"
+import type {
+  PacienteDTO,
+  PacientesQuery,
+  UpdatePacientePayload,
+} from "@/api/types"
 import { toPacientePayload, toPatient, toTreatmentPayload } from "@/lib/mappers"
 import type { Patient, PatientInput, Treatment } from "@/types/clinic"
 
-/** `GET /pacientes` — pacientes activos del médico autenticado. */
-export async function listPatients(): Promise<Patient[]> {
-  const { data } = await api.get<PacienteDTO[]>(ENDPOINTS.pacientes.root)
+/**
+ * `GET /pacientes` — pacientes activos del médico autenticado, o los del
+ * médico indicado en `medicoEmail` (un asistente no tiene pacientes propios).
+ */
+export async function listPatients(
+  medicoEmail?: string | null,
+): Promise<Patient[]> {
+  const params: PacientesQuery | undefined = medicoEmail
+    ? { correo_medico: medicoEmail }
+    : undefined
+  const { data } = await api.get<PacienteDTO[]>(ENDPOINTS.pacientes.root, {
+    params,
+  })
   return data.map(toPatient)
 }
 

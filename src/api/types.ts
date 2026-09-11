@@ -17,8 +17,13 @@ export type TratamientoDTO = {
   id: string
   fecha: string
   nombre: string
-  costo: number | null
-  cuenta: number | null
+  /**
+   * Las columnas `decimal` de Postgres llegan como string ("1200.00"), no
+   * como number: hay que convertirlas antes de reenviarlas (ver `toNumber`
+   * en `@/lib/mappers`).
+   */
+  costo: number | string | null
+  cuenta: number | string | null
   id_paciente: number
 }
 
@@ -95,6 +100,24 @@ export type CreatePacientePayload = {
 export type UpdatePacientePayload = Partial<CreatePacientePayload> & {
   tratamientos?: TratamientoPayload[]
 }
+
+/** `GET /user/dashboard` — métricas anuales ya agregadas por el backend. */
+export type DashboardDTO = {
+  year: number
+  ventasTotales: number
+  consultasTotales: number
+  pacientesTotales: number
+  dineroPorCobrar: number
+  /** 12 posiciones, índice 0 = enero. */
+  ventasPorMes: number[]
+  /** 12 posiciones, índice 0 = enero. */
+  citasPorMes: number[]
+}
+
+export type DashboardQuery = { year?: number }
+
+/** `GET /pacientes` — un asistente pide los pacientes del médico que atiende. */
+export type PacientesQuery = { correo_medico?: string }
 
 export type CitasQuery = {
   year?: number

@@ -209,6 +209,14 @@ Actualiza el nombre del propio usuario autenticado.
 
 - **Respuesta `200`:** objeto `Usuario` actualizado.
 
+### `GET /user/medicos`
+
+Lista los médicos **activos** del consultorio, ordenados por nombre. A diferencia de `GET /user/all`, no requiere rol `medico`: un asistente la necesita para elegir de qué médico ve la agenda y a nombre de quién agenda una cita.
+
+- **Auth:** sí. **Rol:** cualquiera.
+- **Headers:** `token: <jwt>`.
+- **Respuesta `200`:** `Usuario[]` (solo `tipo: "medico"` con `activo: true`).
+
 ### `GET /user/all`
 
 Lista todos los usuarios del sistema.
@@ -275,10 +283,16 @@ Gestión de pacientes. Todas las rutas requieren header `token`; los pacientes q
 
 ### `GET /pacientes`
 
-Lista los pacientes activos **del médico autenticado** (filtra por `correo_medico` = correo del token).
+Lista los pacientes activos **del médico autenticado** (filtra por `correo_medico` = correo del token), o los del médico indicado en la query.
 
 - **Auth:** sí.
 - **Headers:** `token: <jwt>`.
+- **Query:**
+
+| Campo | Tipo | Requerido | Notas |
+|---|---|---|---|
+| `correo_medico` | `string` | No | Lista los pacientes de ese médico en lugar de los del token. Lo usa un asistente, que no tiene pacientes propios. |
+
 - **Respuesta `200`:** `Paciente[]` (incluye `medico` cargado).
 
 ### `GET /pacientes/:id`
@@ -427,6 +441,30 @@ Crea una nueva cita para el médico autenticado.
 
 - **Respuesta `201`:** objeto `Cita` creado (`id` generado por el backend).
 - **Errores:** `404` si el paciente no existe o está inactivo; `409` si el médico ya tiene una cita registrada exactamente en ese horario.
+
+### `GET /citas/medico/:correo`
+
+Igual que `GET /citas`, pero sobre la agenda del médico indicado en la URL en vez de la del token. Pensada para que un **asistente** consulte la agenda de cualquier médico.
+
+- **Auth:** sí. **Rol:** cualquiera.
+- **Headers:** `token: <jwt>`.
+- **Params:** `correo` (`string`) — debe ser un usuario existente, de `tipo: "medico"` y `activo: true`.
+- **Query:** los mismos campos que `GET /citas` (`year`, `month`, `week`, `query`).
+- **Respuesta `200`:** citas agrupadas por fecha, idéntico a `GET /citas`.
+- **Errores:** `404` si el correo no existe, no es de un médico o el médico está inactivo.
+
+### `POST /citas/medico/:correo`
+
+Crea una cita **a nombre del médico indicado en la URL**, no del usuario autenticado. Es la ruta con la que un asistente agenda por un médico.
+
+- **Auth:** sí. **Rol:** cualquiera.
+- **Headers:** `token: <jwt>`.
+- **Params:** `correo` (`string`) — mismo criterio de validación que arriba.
+- **Body:** idéntico al de `POST /citas` (`id_paciente`, `fecha_cita`, `motivo`, `estatus`).
+- **Respuesta `201`:** objeto `Cita` creado (su `id` se compone con el correo del médico de la URL).
+- **Errores:** `404` si el médico o el paciente no existen; `409` si ese médico ya tiene una cita en ese horario.
+
+> Nota: `PUT /citas/:id` y `DELETE /citas/:id` siguen filtrando por el médico del token, así que un asistente no puede editar ni borrar citas ajenas (responden `404`).
 
 ### `PUT /citas/:id`
 

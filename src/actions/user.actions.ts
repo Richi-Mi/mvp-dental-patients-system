@@ -2,16 +2,37 @@ import { api } from "@/api/client"
 import { ENDPOINTS } from "@/api/endpoints"
 import type {
   AdminRegisterPayload,
+  DashboardDTO,
   MessageResponse,
   UpdateUsuarioPayload,
   UsuarioDTO,
 } from "@/api/types"
-import { toUsuario } from "@/lib/mappers"
-import type { Usuario } from "@/types/clinic"
+import { toDashboard, toUsuario } from "@/lib/mappers"
+import type { DashboardMetrics, Usuario } from "@/types/clinic"
+
+/**
+ * `GET /user/dashboard` — métricas del año ya agregadas por el backend.
+ * Sin `year` responde con el año actual; fuera de 2000–2100 devuelve 400.
+ */
+export async function getDashboard(year?: number): Promise<DashboardMetrics> {
+  const { data } = await api.get<DashboardDTO>(ENDPOINTS.user.dashboard, {
+    params: year === undefined ? undefined : { year },
+  })
+  return toDashboard(data)
+}
 
 /** `GET /user/all` — requiere rol `medico`. */
 export async function listUsers(): Promise<Usuario[]> {
   const { data } = await api.get<UsuarioDTO[]>(ENDPOINTS.user.all)
+  return data.map(toUsuario)
+}
+
+/**
+ * `GET /user/medicos` — médicos activos. Cualquier usuario autenticado puede
+ * consultarla: un asistente la necesita para elegir de qué médico ve la agenda.
+ */
+export async function listMedicos(): Promise<Usuario[]> {
+  const { data } = await api.get<UsuarioDTO[]>(ENDPOINTS.user.medicos)
   return data.map(toUsuario)
 }
 

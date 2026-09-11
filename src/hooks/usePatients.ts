@@ -1,7 +1,6 @@
 import * as React from "react"
 import {
   useMutation,
-  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query"
@@ -10,7 +9,8 @@ import { pacientesActions } from "@/actions"
 import { queryKeys } from "@/lib/query-keys"
 import { useAuthStore } from "@/store/auth.store"
 import { useUiStore } from "@/store/ui.store"
-import type { Patient, PatientInput, Treatment, TreatmentInput } from "@/types/clinic"
+import type { Patient, PatientInput, Treatment } from "@/types/clinic"
+import { useActiveMedico } from "./useMedicos"
 
 /** Referencia estable para evitar recalcular memos en cada render. */
 const NO_PATIENTS: Patient[] = []
@@ -18,16 +18,24 @@ const NO_PATIENTS: Patient[] = []
 /**
  * Listado de pacientes del médico autenticado (`/pacientes`) + mutaciones.
  * El buscador es local: el endpoint de listado no recibe filtros.
+ *
+ * Un asistente no tiene pacientes propios: ve los del médico que tenga
+ * elegido (`?correo_medico=`), el mismo de la agenda.
  */
 export function usePatients() {
   const search = useUiStore((s) => s.patientSearch)
   const setSearch = useUiStore((s) => s.setPatientSearch)
-  const correoMedico = useAuthStore((s) => s.usuario?.correo ?? null)
+  const propio = useAuthStore((s) => s.usuario?.correo ?? null)
+  const { medicoEmail, isReady } = useActiveMedico()
   const queryClient = useQueryClient()
 
+  // A quién se asignan los pacientes nuevos: al médico elegido o a uno mismo.
+  const correoMedico = medicoEmail ?? propio
+
   const listQuery = useQuery({
-    queryKey: queryKeys.patients.list(),
-    queryFn: pacientesActions.listPatients,
+    queryKey: queryKeys.patients.list(medicoEmail),
+    queryFn: () => pacientesActions.listPatients(medicoEmail),
+    enabled: isReady,
   })
 
   const patients = listQuery.data ?? NO_PATIENTS
@@ -45,7 +53,7 @@ export function usePatients() {
 
   const invalidate = React.useCallback(
     (id?: number) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.patients.list() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.patients.all })
       if (id != null) {
         queryClient.invalidateQueries({ queryKey: queryKeys.patients.detail(id) })
       }
@@ -61,7 +69,15 @@ export function usePatients() {
         medicoEmail: correoMedico,
         ...input,
       }),
-    onSuccess: (patient) => invalidate(patient.id),
+    onSuccess: (patient) => {
+      // Se agrega al listado en el acto para que quien navegue de vuelta
+      // (p. ej. el diálogo de nueva cita) ya lo encuentre seleccionable.
+      queryClient.setQueryData<Patient[]>(
+        queryKeys.patients.list(medicoEmail),
+        (prev) => (prev ? [...prev, patient] : [patient]),
+      )
+      invalidate(patient.id)
+    },
   })
 
   const updateMutation = useMutation({
@@ -85,6 +101,8 @@ export function usePatients() {
     filtered,
     search,
     setSearch,
+    /** Médico dueño de estos pacientes (`null` = el usuario autenticado). */
+    medicoEmail,
     isLoading: listQuery.isLoading,
     isFetching: listQuery.isFetching,
     error: listQuery.error,
@@ -128,39 +146,13 @@ export function usePatient(id: number | undefined) {
     queryClient.invalidateQueries({ queryKey: queryKeys.patients.list() })
   }, [enabled, id, queryClient])
 
-  /** Envía la lista final completa de tratamientos. */
+  /**
+   * Envía la lista final completa: `PUT /pacientes/:id` reemplaza todos los
+   * tratamientos guardados, no los actualiza uno por uno.
+   */
   const saveTreatmentsMutation = useMutation({
     mutationFn: (treatments: Treatment[]) =>
       pacientesActions.updatePatient(id as number, { treatments }),
-    onSuccess: onPatientChange,
-  })
-
-  const currentTreatments = React.useCallback(async (): Promise<Treatment[]> => {
-    if (patient) return patient.treatments
-    const fresh = await queryClient.fetchQuery({
-      queryKey: queryKeys.patients.detail(id as number),
-      queryFn: () => pacientesActions.getPatient(id as number),
-    })
-    return fresh.treatments
-  }, [patient, queryClient, id])
-
-  const addTreatmentMutation = useMutation({
-    mutationFn: async (input: TreatmentInput) => {
-      const treatments = await currentTreatments()
-      return pacientesActions.updatePatient(id as number, {
-        treatments: [...treatments, { ...input, id: "" }],
-      })
-    },
-    onSuccess: onPatientChange,
-  })
-
-  const removeTreatmentMutation = useMutation({
-    mutationFn: async (treatmentId: string) => {
-      const treatments = await currentTreatments()
-      return pacientesActions.updatePatient(id as number, {
-        treatments: treatments.filter((t) => t.id !== treatmentId),
-      })
-    },
     onSuccess: onPatientChange,
   })
 
@@ -182,43 +174,8 @@ export function usePatient(id: number | undefined) {
     updatePatient: updateMutation.mutateAsync,
     isUpdating: updateMutation.isPending,
 
-    addTreatment: addTreatmentMutation.mutateAsync,
-    isAddingTreatment: addTreatmentMutation.isPending,
-    removeTreatment: removeTreatmentMutation.mutateAsync,
     saveTreatments: saveTreatmentsMutation.mutateAsync,
-  }
-}
-
-/**
- * Expedientes completos de todos los pacientes. `GET /pacientes` no trae
- * tratamientos, así que el dashboard necesita el detalle de cada uno.
- */
-export function usePatientsWithTreatments() {
-  const listQuery = useQuery({
-    queryKey: queryKeys.patients.list(),
-    queryFn: pacientesActions.listPatients,
-  })
-
-  const details = useQueries({
-    queries: (listQuery.data ?? NO_PATIENTS).map((p) => ({
-      queryKey: queryKeys.patients.detail(p.id),
-      queryFn: () => pacientesActions.getPatient(p.id),
-      staleTime: 60_000,
-    })),
-  })
-
-  const patients = React.useMemo(
-    () =>
-      details
-        .map((d) => d.data)
-        .filter((p): p is Patient => Boolean(p)),
-    [details],
-  )
-
-  return {
-    patients,
-    total: listQuery.data?.length ?? 0,
-    isLoading: listQuery.isLoading || details.some((d) => d.isLoading),
-    error: listQuery.error ?? details.find((d) => d.error)?.error ?? null,
+    isSavingTreatments: saveTreatmentsMutation.isPending,
+    saveTreatmentsError: saveTreatmentsMutation.error,
   }
 }

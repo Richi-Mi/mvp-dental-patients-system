@@ -14,13 +14,18 @@ import type { Appointment, AppointmentInput } from "@/types/clinic"
 /**
  * `GET /citas` — el backend responde agrupado por `YYYY-MM-DD`; aquí se
  * aplana para que la UI agrupe por día local (ver `groupByDay`).
+ *
+ * Con `medicoEmail` consulta `GET /citas/medico/:correo`, la agenda de ese
+ * médico, que es como un asistente ve la agenda ajena.
  */
 export async function listAppointments(
   query: CitasQuery = {},
+  medicoEmail?: string | null,
 ): Promise<Appointment[]> {
-  const { data } = await api.get<CitasAgrupadasDTO>(ENDPOINTS.citas.root, {
-    params: query,
-  })
+  const url = medicoEmail
+    ? ENDPOINTS.citas.byMedico(medicoEmail)
+    : ENDPOINTS.citas.root
+  const { data } = await api.get<CitasAgrupadasDTO>(url, { params: query })
   return Object.values(data ?? {})
     .flat()
     .map(toAppointment)
@@ -37,12 +42,21 @@ function toCitaPayload(input: Partial<AppointmentInput>): UpdateCitaPayload {
   return payload
 }
 
-/** `POST /citas` */
+/**
+ * `POST /citas` — cita del médico autenticado.
+ *
+ * Con `medicoEmail` usa `POST /citas/medico/:correo`: la cita queda a nombre
+ * de ese médico, que es como un asistente agenda por él.
+ */
 export async function createAppointment(
   input: AppointmentInput,
+  medicoEmail?: string | null,
 ): Promise<Appointment> {
+  const url = medicoEmail
+    ? ENDPOINTS.citas.byMedico(medicoEmail)
+    : ENDPOINTS.citas.root
   const { data } = await api.post<CitaDTO>(
-    ENDPOINTS.citas.root,
+    url,
     toCitaPayload(input) as CreateCitaPayload,
   )
   return toAppointment(data)

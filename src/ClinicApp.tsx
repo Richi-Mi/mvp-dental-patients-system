@@ -8,10 +8,10 @@ import { queryClient } from "@/lib/query-client"
 import { router } from "@/router"
 
 export function ClinicApp() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-      {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
-    </QueryClientProvider>
-  )
+    return (
+        <QueryClientProvider client={queryClient}>
+            <RouterProvider router={router} />
+            {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+        </QueryClientProvider>
+    )
 }

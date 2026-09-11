@@ -4,15 +4,12 @@ import * as React from "react"
 import { useNavigate, useParams } from "react-router"
 import {
   CalendarClock,
-  Check,
   ClipboardList,
   Loader2,
   Mail,
   MapPin,
   Phone,
-  Plus,
   Trash2,
-  X,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -24,30 +21,15 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { EditPatientDialog } from "@/components/custom/edit-patient-dialog"
+import { TreatmentsTable } from "@/components/custom/treatments-table"
 import { usePatient, usePatients } from "@/hooks/usePatients"
 import {
   STATUS_META,
-  formatCurrency,
   formatDayName,
   formatLongDate,
-  formatShortDate,
-  todayISO,
-  treatmentSaldo,
-  treatmentsSaldo,
-  treatmentsTotal,
 } from "@/lib/clinic-data"
-import { cn } from "@/lib/utils"
 
 export function PatientsEmptyView() {
   return (
@@ -74,37 +56,11 @@ export function PatientDetailView() {
     nextAppointment,
     isLoading,
     error,
-    addTreatment,
-    isAddingTreatment,
-    removeTreatment,
+    saveTreatments,
+    isSavingTreatments,
+    saveTreatmentsError,
   } = usePatient(Number.isFinite(patientId) ? patientId : undefined)
   const { deletePatient, isDeleting } = usePatients()
-
-  const [editing, setEditing] = React.useState(false)
-  const [draftFecha, setDraftFecha] = React.useState(todayISO)
-  const [draftTrat, setDraftTrat] = React.useState("")
-  const [draftCosto, setDraftCosto] = React.useState("")
-  const [draftACuenta, setDraftACuenta] = React.useState("")
-
-  function resetDraft() {
-    setDraftFecha(todayISO())
-    setDraftTrat("")
-    setDraftCosto("")
-    setDraftACuenta("")
-    setEditing(false)
-  }
-
-  async function handleAddTreatment() {
-    const costoNum = Number(draftCosto) || 0
-    if (!draftTrat.trim() || costoNum <= 0) return
-    await addTreatment({
-      fecha: draftFecha,
-      tratamiento: draftTrat.trim(),
-      costo: costoNum,
-      aCuenta: Math.min(Number(draftACuenta) || 0, costoNum),
-    })
-    resetDraft()
-  }
 
   async function handleDeletePatient() {
     if (!patient) return
@@ -215,170 +171,12 @@ export function PatientDetailView() {
         </CardContent>
       </Card>
 
-      <Card className="border-border/70">
-        <CardHeader>
-          <CardTitle className="text-base">Control de tratamiento</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto rounded-lg border border-border/70">
-            <Table className="min-w-[560px]">
-              <TableHeader>
-                <TableRow className="bg-muted/60">
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Tratamiento</TableHead>
-                  <TableHead className="text-right">Costo</TableHead>
-                  <TableHead className="text-right">A cuenta</TableHead>
-                  <TableHead className="text-right">Saldo</TableHead>
-                  <TableHead className="w-16" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {treatments.map((t) => {
-                  const saldo = treatmentSaldo(t)
-                  return (
-                    <TableRow key={t.id}>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {formatShortDate(t.fecha)}
-                      </TableCell>
-                      <TableCell className="font-medium text-foreground">
-                        {t.tratamiento}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatCurrency(t.costo)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">
-                        {formatCurrency(t.aCuenta)}
-                      </TableCell>
-                      <TableCell
-                        className={cn(
-                          "text-right font-medium tabular-nums",
-                          saldo > 0 ? "text-rose-600" : "text-emerald-600",
-                        )}
-                      >
-                        {formatCurrency(saldo)}
-                      </TableCell>
-                      <TableCell>
-                        <button
-                          type="button"
-                          onClick={() => void removeTreatment(t.id)}
-                          className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
-                          aria-label={`Eliminar ${t.tratamiento}`}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-
-                {editing ? (
-                  <TableRow className="bg-primary/5">
-                    <TableCell className="whitespace-nowrap">
-                      <Input
-                        type="date"
-                        value={draftFecha}
-                        onChange={(e) => setDraftFecha(e.target.value)}
-                        className="h-8 w-32 text-xs"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        placeholder="Tratamiento"
-                        value={draftTrat}
-                        onChange={(e) => setDraftTrat(e.target.value)}
-                        className="h-8 text-xs"
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Input
-                        type="number"
-                        min="0"
-                        placeholder="0"
-                        value={draftCosto}
-                        onChange={(e) => setDraftCosto(e.target.value)}
-                        className="h-8 w-20 text-right text-xs"
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Input
-                        type="number"
-                        min="0"
-                        placeholder="0"
-                        value={draftACuenta}
-                        onChange={(e) => setDraftACuenta(e.target.value)}
-                        className="h-8 w-20 text-right text-xs"
-                      />
-                    </TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">
-                      {formatCurrency(
-                        Math.max(
-                          0,
-                          (Number(draftCosto) || 0) - (Number(draftACuenta) || 0),
-                        ),
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          disabled={isAddingTreatment}
-                          onClick={() => void handleAddTreatment()}
-                          className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                          aria-label="Guardar"
-                        >
-                          {isAddingTreatment ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            <Check className="size-3.5" />
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={resetDraft}
-                          className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
-                          aria-label="Cancelar"
-                        >
-                          <X className="size-3.5" />
-                        </button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  <TableRow
-                    className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => {
-                      resetDraft()
-                      setEditing(true)
-                    }}
-                  >
-                    <TableCell colSpan={6}>
-                      <span className="flex items-center gap-2 text-sm font-medium text-primary">
-                        <Plus className="size-4" />
-                        Nuevo registro
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-
-          <div className="mt-3 flex flex-wrap justify-end gap-x-8 gap-y-1 text-sm">
-            <span className="text-muted-foreground">
-              Total tratamientos:{" "}
-              <span className="font-medium tabular-nums text-foreground">
-                {formatCurrency(treatmentsTotal(treatments))}
-              </span>
-            </span>
-            <span className="text-muted-foreground">
-              Saldo pendiente:{" "}
-              <span className="font-medium tabular-nums text-rose-600">
-                {formatCurrency(treatmentsSaldo(treatments))}
-              </span>
-            </span>
-          </div>
-        </CardContent>
-      </Card>
+      <TreatmentsTable
+        treatments={treatments}
+        onSave={saveTreatments}
+        isSaving={isSavingTreatments}
+        saveError={saveTreatmentsError}
+      />
     </div>
   )
 }

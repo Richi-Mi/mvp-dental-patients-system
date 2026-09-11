@@ -1,236 +1,284 @@
 "use client"
 
 import * as React from "react"
-import { Plus } from "lucide-react"
+import { useLocation, useNavigate, useSearchParams } from "react-router"
+import { Plus, UserPlus } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+    Dialog,
+    DialogClose,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DatePicker } from "@/components/custom/calendar"
+import { TimePicker } from "@/components/custom/time-picker"
 import { useAgenda } from "@/hooks/useAgenda"
 import { usePatients } from "@/hooks/usePatients"
-import { STATUS_META, todayISO } from "@/lib/clinic-data"
+import { STATUS_META, isClosedDay, weekdayName } from "@/lib/clinic-data"
+import { useUiStore } from "@/store/ui.store"
 import type { AppointmentStatus } from "@/types/clinic"
 
 const fieldControl =
-  "flex h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+    "flex h-9 w-full cursor-pointer rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+
+/** `?cita=nueva` abre el diálogo; `?paciente=<id>` preselecciona al paciente. */
+const NEW_APPOINTMENT_SEARCH = "cita=nueva"
 
 export function NewAppointmentDialog() {
-  const { patients, createPatient } = usePatients()
-  const { createAppointment, isCreating, createError } = useAgenda()
-  const [open, setOpen] = React.useState(false)
+    const [searchParams, setSearchParams] = useSearchParams()
+    const navigate = useNavigate()
+    const location = useLocation()
 
-  const [patientMode, setPatientMode] = React.useState<"existente" | "nuevo">(
-    "existente",
-  )
-  const [patientId, setPatientId] = React.useState("")
-  const [newPatientName, setNewPatientName] = React.useState("")
-  const [date, setDate] = React.useState(todayISO)
-  const [time, setTime] = React.useState("09:00")
-  const [status, setStatus] = React.useState<AppointmentStatus>("pendiente")
-  const [motivo, setMotivo] = React.useState("")
+    const { patients } = usePatients()
+    const {
+        createAppointment,
+        isCreating,
+        createError,
+        isAsistente,
+        medicos,
+        medicoEmail,
+        medicoActivo,
+        setMedico,
+    } = useAgenda()
 
-  function reset() {
-    setPatientMode("existente")
-    setPatientId("")
-    setNewPatientName("")
-    setDate(todayISO())
-    setTime("09:00")
-    setStatus("pendiente")
-    setMotivo("")
-  }
+    const draft = useUiStore((s) => s.appointmentDraft)
+    const setDraft = useUiStore((s) => s.setAppointmentDraft)
+    const resetDraft = useUiStore((s) => s.resetAppointmentDraft)
 
-  const canSubmit =
-    patientMode === "existente" ? !!patientId : newPatientName.trim().length > 0
+    // El diálogo se controla por URL para poder volver a él después de crear
+    // un paciente en otra ruta.
+    const open = searchParams.get("cita") === "nueva"
+    const patientFromUrl = searchParams.get("paciente")
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!canSubmit || isCreating) return
+    // Al volver de "Nuevo paciente" el id llega por la URL: se adopta una sola
+    // vez y se limpia el parámetro.
+    React.useEffect(() => {
+        if (!patientFromUrl) return
+        setDraft({ patientId: patientFromUrl })
+        setSearchParams(
+            (prev) => {
+                const next = new URLSearchParams(prev)
+                next.delete("paciente")
+                return next
+            },
+            { replace: true },
+        )
+    }, [patientFromUrl, setDraft, setSearchParams])
 
-    // El alta rápida crea el expediente mínimo; el resto se completa desde
-    // la ficha del paciente.
-    const resolvedPatientId =
-      patientMode === "existente"
-        ? Number(patientId)
-        : (
-            await createPatient({
-              name: newPatientName.trim(),
-              age: "",
-              gender: "",
-              phone: "",
-              email: "",
-              address: "",
-              cp: "",
-              notes: "",
-            })
-          ).id
+    function setOpen(next: boolean) {
+        setSearchParams(
+            (prev) => {
+                const params = new URLSearchParams(prev)
+                if (next) params.set("cita", "nueva")
+                else {
+                    params.delete("cita")
+                    params.delete("paciente")
+                }
+                return params
+            },
+            { replace: true },
+        )
+    }
 
-    await createAppointment({
-      patientId: resolvedPatientId,
-      date,
-      time,
-      status,
-      motivo: motivo.trim() || "Consulta general",
-    })
+    const closedDay = isClosedDay(draft.date)
+    // Un asistente agenda a nombre del médico elegido: sin médico no hay a
+    // dónde mandar el POST.
+    const canSubmit =
+        Boolean(draft.patientId) &&
+        Boolean(draft.date) &&
+        !closedDay &&
+        (!isAsistente || Boolean(medicoEmail))
 
-    reset()
-    setOpen(false)
-  }
+    function goToNewPatient() {
+        // Vuelve a este mismo diálogo; el borrador queda en el store.
+        const backTo = `${location.pathname}?${NEW_APPOINTMENT_SEARCH}`
+        navigate(`/pacientes/nuevo?redirectTo=${encodeURIComponent(backTo)}`)
+    }
 
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next)
-        if (!next) reset()
-      }}
-    >
-      <DialogTrigger
-        render={
-          <Button size="sm">
-            <Plus data-icon="inline-start" />
-            Nueva Cita
-          </Button>
-        }
-      />
-      <DialogContent className="sm:max-w-md">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>Nueva cita</DialogTitle>
-            <DialogDescription>
-              Programa una cita para un paciente registrado o crea uno nuevo.
-            </DialogDescription>
-          </DialogHeader>
+    async function handleSubmit(e: React.FormEvent) {
+        e.preventDefault()
+        if (!canSubmit || isCreating) return
 
-          <FieldGroup className="py-4">
-            <Field>
-              <FieldLabel>Paciente</FieldLabel>
-              <Tabs
-                value={patientMode}
-                onValueChange={(v) => setPatientMode(v as "existente" | "nuevo")}
-              >
-                <TabsList className="w-full">
-                  <TabsTrigger value="existente" className="flex-1">
-                    Existente
-                  </TabsTrigger>
-                  <TabsTrigger value="nuevo" className="flex-1">
-                    Nuevo
-                  </TabsTrigger>
-                </TabsList>
+        await createAppointment({
+            patientId: Number(draft.patientId),
+            date: draft.date,
+            time: draft.time,
+            status: draft.status,
+            motivo: draft.motivo.trim() || "Consulta general",
+        })
 
-                <TabsContent value="existente" className="pt-3">
-                  <select
-                    id="na-patient"
-                    className={fieldControl}
-                    value={patientId}
-                    onChange={(e) => setPatientId(e.target.value)}
-                    required={patientMode === "existente"}
-                  >
-                    <option value="" disabled>
-                      Selecciona un paciente
-                    </option>
-                    {patients.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </TabsContent>
+        resetDraft()
+        setOpen(false)
+    }
 
-                <TabsContent value="nuevo" className="pt-3">
-                  <Input
-                    id="na-new-patient"
-                    placeholder="Nombre del nuevo paciente"
-                    value={newPatientName}
-                    onChange={(e) => setNewPatientName(e.target.value)}
-                    required={patientMode === "nuevo"}
-                  />
-                </TabsContent>
-              </Tabs>
-            </Field>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Field>
-                <FieldLabel htmlFor="na-date">Fecha</FieldLabel>
-                <Input
-                  id="na-date"
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  required
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="na-time">Hora</FieldLabel>
-                <Input
-                  id="na-time"
-                  type="time"
-                  value={time}
-                  onChange={(e) => setTime(e.target.value)}
-                  required
-                />
-              </Field>
-            </div>
-
-            <Field>
-              <FieldLabel htmlFor="na-status">Estatus</FieldLabel>
-              <select
-                id="na-status"
-                className={fieldControl}
-                value={status}
-                onChange={(e) => setStatus(e.target.value as AppointmentStatus)}
-              >
-                {Object.entries(STATUS_META).map(([value, meta]) => (
-                  <option key={value} value={value}>
-                    {meta.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="na-motivo">Motivo</FieldLabel>
-              <Input
-                id="na-motivo"
-                placeholder="Ej. Limpieza dental"
-                value={motivo}
-                onChange={(e) => setMotivo(e.target.value)}
-              />
-            </Field>
-
-            {createError && (
-              <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                {createError instanceof Error
-                  ? createError.message
-                  : "No se pudo crear la cita."}
-              </p>
-            )}
-          </FieldGroup>
-
-          <DialogFooter>
-            <DialogClose
-              render={
-                <Button type="button" variant="outline">
-                  Cancelar
-                </Button>
-              }
-            />
-            <Button type="submit" disabled={!canSubmit || isCreating}>
-              {isCreating ? "Guardando..." : "Guardar cita"}
+    return (
+        <>
+            <Button size="sm" onClick={() => setOpen(true)}>
+                <Plus data-icon="inline-start" />
+                Nueva Cita
             </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
+
+            <Dialog open={open} onOpenChange={setOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <form onSubmit={handleSubmit}>
+                        <DialogHeader>
+                            <DialogTitle>Nueva cita</DialogTitle>
+                            <DialogDescription>
+                                {isAsistente && medicoActivo
+                                    ? `Programa una cita en la agenda de ${medicoActivo.nombre}.`
+                                    : "Programa una cita para un paciente registrado."}
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <FieldGroup className="py-4">
+                            {isAsistente && (
+                                <Field>
+                                    <FieldLabel htmlFor="na-medico">Médico</FieldLabel>
+                                    <select
+                                        id="na-medico"
+                                        className={fieldControl}
+                                        value={medicoEmail ?? ""}
+                                        onChange={(e) => setMedico(e.target.value)}
+                                        required
+                                    >
+                                        <option value="" disabled>
+                                            Selecciona un médico
+                                        </option>
+                                        {medicos.map((medico) => (
+                                            <option key={medico.correo} value={medico.correo}>
+                                                {medico.nombre}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="text-xs text-muted-foreground">
+                                        La cita queda a su nombre y los pacientes que
+                                        aparecen abajo son los suyos.
+                                    </p>
+                                </Field>
+                            )}
+
+                            <Field>
+                                <FieldLabel htmlFor="na-patient">Paciente</FieldLabel>
+                                <div className="flex items-center gap-2">
+                                    <select
+                                        id="na-patient"
+                                        className={fieldControl}
+                                        value={draft.patientId}
+                                        onChange={(e) => setDraft({ patientId: e.target.value })}
+                                        required
+                                    >
+                                        <option value="" disabled>
+                                            Selecciona un paciente
+                                        </option>
+                                        {patients.map((p) => (
+                                            <option key={p.id} value={p.id}>
+                                                {p.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="shrink-0"
+                                        onClick={goToNewPatient}
+                                    >
+                                        <UserPlus data-icon="inline-start" />
+                                        Nuevo paciente
+                                    </Button>
+                                </div>
+                            </Field>
+
+                            <div className="grid grid-cols-[1fr_auto] gap-4">
+                                <Field>
+                                    <FieldLabel htmlFor="na-date">Fecha</FieldLabel>
+                                    <DatePicker
+                                        id="na-date"
+                                        value={draft.date}
+                                        onChange={(date) => setDraft({ date })}
+                                        aria-invalid={closedDay}
+                                        aria-describedby={closedDay ? "na-date-error" : undefined}
+                                    />
+                                </Field>
+                                <Field>
+                                    <FieldLabel htmlFor="na-time">Hora</FieldLabel>
+                                    <TimePicker
+                                        id="na-time"
+                                        value={draft.time}
+                                        onChange={(time) => setDraft({ time })}
+                                    />
+                                </Field>
+                            </div>
+
+                            {closedDay && (
+                                <p
+                                    id="na-date-error"
+                                    role="alert"
+                                    className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700"
+                                >
+                                    El consultorio no atiende los {weekdayName(draft.date)}s.
+                                    Elige otro día.
+                                </p>
+                            )}
+
+                            <Field>
+                                <FieldLabel htmlFor="na-status">Estatus</FieldLabel>
+                                <select
+                                    id="na-status"
+                                    className={fieldControl}
+                                    value={draft.status}
+                                    onChange={(e) =>
+                                        setDraft({ status: e.target.value as AppointmentStatus })
+                                    }
+                                >
+                                    {Object.entries(STATUS_META).map(([value, meta]) => (
+                                        <option key={value} value={value}>
+                                            {meta.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </Field>
+
+                            <Field>
+                                <FieldLabel htmlFor="na-motivo">Motivo</FieldLabel>
+                                <Input
+                                    id="na-motivo"
+                                    placeholder="Ej. Limpieza dental"
+                                    value={draft.motivo}
+                                    onChange={(e) => setDraft({ motivo: e.target.value })}
+                                />
+                            </Field>
+
+                            {createError && (
+                                <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                                    {createError instanceof Error
+                                        ? createError.message
+                                        : "No se pudo crear la cita."}
+                                </p>
+                            )}
+                        </FieldGroup>
+
+                        <DialogFooter>
+                            <DialogClose
+                                render={
+                                    <Button type="button" variant="outline">
+                                        Cancelar
+                                    </Button>
+                                }
+                            />
+                            <Button type="submit" disabled={!canSubmit || isCreating}>
+                                {isCreating ? "Guardando..." : "Guardar cita"}
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+        </>
+    )
 }

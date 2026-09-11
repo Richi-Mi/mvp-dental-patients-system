@@ -1,14 +1,14 @@
 "use client"
 
-import { NavLink, Outlet } from "react-router"
-import { ChevronRight, Loader2, Search } from "lucide-react"
+import { Link, NavLink, Outlet } from "react-router"
+import { ChevronRight, Loader2, Search, UserPlus } from "lucide-react"
 
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
 } from "@/components/ui/input-group"
-import { NewPatientDialog } from "@/components/custom/new-patient-dialog"
+import { Button } from "@/components/ui/button"
 import { usePatients } from "@/hooks/usePatients"
 import { cn } from "@/lib/utils"
 
@@ -27,7 +27,10 @@ export function PatientsView() {
             Expedientes y control de tratamientos.
           </p>
         </div>
-        <NewPatientDialog />
+        <Button size="sm" render={<Link to="/pacientes/nuevo" />}>
+          <UserPlus data-icon="inline-start" />
+          Nuevo paciente
+        </Button>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">

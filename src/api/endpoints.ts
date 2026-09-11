@@ -8,6 +8,8 @@ export const ENDPOINTS = {
     me: "/user",
     updateMe: "/user/update",
     all: "/user/all",
+    medicos: "/user/medicos",
+    dashboard: "/user/dashboard",
     byCorreo: (correo: string) => `/user/admin/${encodeURIComponent(correo)}`,
     adminRegister: "/user/admin/register",
   },
@@ -18,5 +20,8 @@ export const ENDPOINTS = {
   citas: {
     root: "/citas",
     byId: (id: string) => `/citas/${encodeURIComponent(id)}`,
+    /** Agenda de otro médico: la usa un asistente (GET lista, POST agenda). */
+    byMedico: (correo: string) =>
+      `/citas/medico/${encodeURIComponent(correo)}`,
   },
 } as const

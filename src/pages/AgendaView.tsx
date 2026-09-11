@@ -1,7 +1,15 @@
 "use client"
 
+import * as React from "react"
 import { Link } from "react-router"
-import { ChevronLeft, ChevronRight, Loader2, Search, Trash2 } from "lucide-react"
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Search,
+  Stethoscope,
+  Trash2,
+} from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -22,12 +30,17 @@ import { NewAppointmentDialog } from "@/components/custom/new-appointment-dialog
 import { useAgenda, type AgendaDay } from "@/hooks/useAgenda"
 import {
   STATUS_META,
+  closedDaysLabel,
   dayOfMonth,
+  formatLongDate,
   formatWeekRange,
   shortDayName,
 } from "@/lib/clinic-data"
 import { cn } from "@/lib/utils"
-import type { Appointment } from "@/types/clinic"
+import type { Appointment, Usuario } from "@/types/clinic"
+
+const fieldControl =
+  "flex h-9 w-full cursor-pointer rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
 
 export function AgendaView() {
   const {
@@ -46,7 +59,22 @@ export function AgendaView() {
     error,
     deleteAppointment,
     isDeleting,
+    isAsistente,
+    medicos,
+    medicoActivo,
+    medicoEmail,
+    setMedico,
+    isLoadingMedicos,
+    medicosError,
   } = useAgenda()
+
+  // El input es un borrador: la búsqueda solo se aplica al enviar el formulario
+  // (Enter o el botón "Buscar"), no en cada tecla.
+  const [term, setTerm] = React.useState(search)
+
+  // `DELETE /citas/:id` solo alcanza las citas del médico del token, así que
+  // un asistente no puede borrar en la agenda que está consultando.
+  const canDelete = !isAsistente
 
   return (
     <div className="flex flex-col gap-6">
@@ -56,24 +84,50 @@ export function AgendaView() {
             Agenda
           </h1>
           <p className="text-sm text-muted-foreground">
-            Citas de la semana en el consultorio.
+            {isAsistente && medicoActivo
+              ? `Citas de la semana de ${medicoActivo.nombre}.`
+              : "Citas de la semana."}
+            {closedDaysLabel() && ` El consultorio no atiende ${closedDaysLabel()}.`}
           </p>
         </div>
         <NewAppointmentDialog />
       </div>
 
+      {isAsistente && (
+        <MedicoPicker
+          medicos={medicos}
+          value={medicoEmail}
+          onChange={setMedico}
+          isLoading={isLoadingMedicos}
+          error={medicosError}
+        />
+      )}
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <InputGroup className="max-w-md">
-          <InputGroupAddon>
+        <form
+          role="search"
+          className="flex w-full max-w-md items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            setSearch(term)
+          }}
+        >
+          <InputGroup className="flex-1">
+            <InputGroupAddon>
+              <Search />
+            </InputGroupAddon>
+            <InputGroupInput
+              placeholder="Buscar por paciente o motivo..."
+              value={term}
+              onChange={(e) => setTerm(e.target.value)}
+              aria-label="Buscar cita"
+            />
+          </InputGroup>
+          <Button type="submit" variant="outline">
             <Search />
-          </InputGroupAddon>
-          <InputGroupInput
-            placeholder="Buscar por paciente o motivo..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            aria-label="Buscar cita"
-          />
-        </InputGroup>
+            Buscar
+          </Button>
+        </form>
 
         <div className="flex items-center gap-1">
           <Button
@@ -124,7 +178,7 @@ export function AgendaView() {
             isFetching && "opacity-60",
           )}
         >
-          <Table className="min-w-[980px] table-fixed">
+          <Table className="min-w-[840px] table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 {weekDays.map((day) => (
@@ -132,7 +186,7 @@ export function AgendaView() {
                     key={day.date}
                     aria-current={day.isToday ? "date" : undefined}
                     className={cn(
-                      "h-auto w-1/7 border-r border-border/70 px-3 py-2.5 text-center last:border-r-0",
+                      "h-auto border-r border-border/70 px-3 py-2.5 text-center last:border-r-0",
                       day.isToday ? "bg-primary/10" : "bg-muted/40",
                     )}
                   >
@@ -168,7 +222,7 @@ export function AgendaView() {
                     key={day.date}
                     day={day}
                     isDeleting={isDeleting}
-                    onDelete={deleteAppointment}
+                    onDelete={canDelete ? deleteAppointment : undefined}
                   />
                 ))}
               </TableRow>
@@ -189,10 +243,14 @@ export function AgendaView() {
           <p className="mb-2 font-medium text-foreground">
             Citas fuera de los días mostrados
           </p>
+          <p className="mb-2 text-xs text-muted-foreground">
+            Agendadas en días sin atención{closedDaysLabel() && ` (${closedDaysLabel()})`}{" "}
+            o en otra semana.
+          </p>
           <ul className="flex flex-col gap-1 text-muted-foreground">
             {outOfWeek.map((appt) => (
               <li key={appt.id}>
-                {appt.date} · {appt.time} h ·{" "}
+                {formatLongDate(appt.date)} · {appt.time} h ·{" "}
                 <PatientLink appointment={appt} /> — {appt.motivo}
               </li>
             ))}
@@ -210,12 +268,13 @@ function DayColumn({
 }: {
   day: AgendaDay
   isDeleting: boolean
-  onDelete: (id: string) => void
+  /** Sin `onDelete` las tarjetas se muestran en modo solo lectura. */
+  onDelete?: (id: string) => void
 }) {
   return (
     <TableCell
       className={cn(
-        "w-1/7 border-r border-border/70 p-2 align-top whitespace-normal last:border-r-0",
+        "border-r border-border/70 p-2 align-top whitespace-normal last:border-r-0",
         day.isToday && "bg-primary/5",
       )}
     >
@@ -248,30 +307,95 @@ function DayColumn({
                   {appt.motivo}
                 </p>
 
-                <button
-                  type="button"
-                  disabled={isDeleting}
-                  aria-label={`Eliminar cita de ${appt.patientName || "paciente"}`}
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        "¿Eliminar esta cita? La acción no se puede deshacer.",
-                      )
-                    ) {
-                      onDelete(appt.id)
-                    }
-                  }}
-                  className="flex items-center gap-1 self-end text-xs text-muted-foreground opacity-0 transition-opacity hover:text-rose-600 focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
-                >
-                  <Trash2 className="size-3.5" />
-                  Eliminar
-                </button>
+                {onDelete && (
+                  <button
+                    type="button"
+                    disabled={isDeleting}
+                    aria-label={`Eliminar cita de ${appt.patientName || "paciente"}`}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "¿Eliminar esta cita? La acción no se puede deshacer.",
+                        )
+                      ) {
+                        onDelete(appt.id)
+                      }
+                    }}
+                    className="flex items-center gap-1 self-end text-xs text-muted-foreground opacity-0 transition-opacity hover:text-rose-600 focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+                  >
+                    <Trash2 className="size-3.5" />
+                    Eliminar
+                  </button>
+                )}
               </article>
             )
           })}
         </div>
       )}
     </TableCell>
+  )
+}
+
+/**
+ * Selector de médico para los asistentes: define de quién es la agenda que se
+ * ve y para quién se agendan las citas nuevas.
+ */
+function MedicoPicker({
+  medicos,
+  value,
+  onChange,
+  isLoading,
+  error,
+}: {
+  medicos: Usuario[]
+  value: string | null
+  onChange: (correo: string) => void
+  isLoading: boolean
+  error: unknown
+}) {
+  if (error) {
+    return (
+      <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
+        {error instanceof Error
+          ? error.message
+          : "No se pudieron cargar los médicos."}
+      </p>
+    )
+  }
+
+  if (!isLoading && medicos.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed px-3 py-3 text-sm text-muted-foreground">
+        No hay médicos activos registrados; pide a un médico que active su
+        cuenta para poder agendar.
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-lg border border-border/70 bg-card p-3 sm:max-w-md">
+      <label
+        htmlFor="agenda-medico"
+        className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+      >
+        <Stethoscope className="size-3.5" />
+        Agenda del médico
+      </label>
+      <select
+        id="agenda-medico"
+        className={fieldControl}
+        value={value ?? ""}
+        disabled={isLoading}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {isLoading && <option value="">Cargando médicos...</option>}
+        {medicos.map((medico) => (
+          <option key={medico.correo} value={medico.correo}>
+            {medico.nombre}
+          </option>
+        ))}
+      </select>
+    </div>
   )
 }
 

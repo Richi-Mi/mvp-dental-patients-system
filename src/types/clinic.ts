@@ -62,6 +62,20 @@ export type AppointmentInput = {
 
 export type TreatmentInput = Omit<Treatment, "id">
 
+export type DashboardMetrics = {
+  year: number
+  ventasTotales: number
+  consultasTotales: number
+  pacientesTotales: number
+  dineroPorCobrar: number
+  /** Derivado en el cliente: el endpoint no lo devuelve (ver `toDashboard`). */
+  dineroACuenta: number
+  /** 12 posiciones, índice 0 = enero. */
+  ventasPorMes: number[]
+  /** 12 posiciones, índice 0 = enero. */
+  citasPorMes: number[]
+}
+
 export type Usuario = {
   correo: string
   nombre: string

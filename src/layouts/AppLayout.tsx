@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { NavLink, Outlet, useNavigate } from "react-router"
-import { CalendarDays, LayoutDashboard, LogOut, Users } from "lucide-react"
+import { CalendarDays, LogOut, UserCog, Users } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/hooks/useAuth"
@@ -10,13 +10,17 @@ import { cn } from "@/lib/utils"
 
 const NAV = [
   { to: "/agenda", label: "Agenda", icon: CalendarDays },
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  // { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/pacientes", label: "Pacientes", icon: Users },
+  // El panel de staff solo existe para el rol `medico` (ver `requireMedico`).
+  { to: "/usuarios", label: "Usuarios", icon: UserCog, medicoOnly: true },
 ] as const
 
 export function AppLayout() {
-  const { usuario, isAuthenticated, logout } = useAuth()
+  const { usuario, isAuthenticated, isMedico, logout } = useAuth()
   const navigate = useNavigate()
+
+  const nav = NAV.filter((item) => !("medicoOnly" in item) || isMedico)
 
   // El interceptor de axios limpia la sesión ante un 401; sin esto la app
   // se quedaría en una pantalla vacía hasta la siguiente navegación.
@@ -44,7 +48,7 @@ export function AppLayout() {
         </div>
 
         <nav className="flex w-full flex-row gap-1 lg:flex-col">
-          {NAV.map((item) => (
+          {nav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

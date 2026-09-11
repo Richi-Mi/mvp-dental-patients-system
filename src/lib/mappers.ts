@@ -1,6 +1,7 @@
 import { toISODateString } from "@/lib/clinic-data"
 import type {
   CitaDTO,
+  DashboardDTO,
   PacienteDTO,
   TratamientoDTO,
   TratamientoPayload,
@@ -9,6 +10,7 @@ import type {
 import type {
   Appointment,
   AppointmentStatus,
+  DashboardMetrics,
   Patient,
   PatientInput,
   Treatment,
@@ -50,11 +52,46 @@ export function toISODateTime(date: string, time: string): string {
   return new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0).toISOString()
 }
 
+/**
+ * Convierte a número los importes que el backend serializa como string.
+ * `?? 0` no basta: solo cubre `null` y dejaba pasar `"1200.00"`, que luego
+ * el `PUT /pacientes/:id` rechazaba por esperar `number | null`.
+ */
+export function toNumber(value: number | string | null | undefined): number {
+  if (value === null || value === undefined || value === "") return 0
+  const numeric = typeof value === "number" ? value : Number(value)
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
 export function normalizeStatus(estatus: string): AppointmentStatus {
   const value = estatus?.trim().toLowerCase()
   return (
     APPOINTMENT_STATUSES.find((s) => s === value) ?? "pendiente"
   )
+}
+
+/** Siempre 12 posiciones, aunque el backend mande menos. */
+function toMonthlyArray(values: number[] | undefined): number[] {
+  return Array.from({ length: 12 }, (_, i) => toNumber(values?.[i]))
+}
+
+export function toDashboard(dto: DashboardDTO): DashboardMetrics {
+  const ventasTotales = toNumber(dto.ventasTotales)
+  const dineroPorCobrar = toNumber(dto.dineroPorCobrar)
+
+  return {
+    year: toNumber(dto.year),
+    ventasTotales,
+    consultasTotales: toNumber(dto.consultasTotales),
+    pacientesTotales: toNumber(dto.pacientesTotales),
+    dineroPorCobrar,
+    // El endpoint no manda los abonos, pero `dineroPorCobrar` es
+    // Σ(costo − cuenta) y `ventasTotales` es Σ costo, así que la diferencia
+    // es exactamente Σ cuenta.
+    dineroACuenta: Math.max(0, ventasTotales - dineroPorCobrar),
+    ventasPorMes: toMonthlyArray(dto.ventasPorMes),
+    citasPorMes: toMonthlyArray(dto.citasPorMes),
+  }
 }
 
 export function toUsuario(dto: UsuarioDTO): Usuario {
@@ -71,8 +108,8 @@ export function toTreatment(dto: TratamientoDTO): Treatment {
     id: dto.id,
     fecha: toISODate(dto.fecha),
     tratamiento: dto.nombre,
-    costo: dto.costo ?? 0,
-    aCuenta: dto.cuenta ?? 0,
+    costo: toNumber(dto.costo),
+    aCuenta: toNumber(dto.cuenta),
   }
 }
 
@@ -82,8 +119,9 @@ export function toTreatmentPayload(
   return {
     fecha: treatment.fecha,
     nombre: treatment.tratamiento,
-    costo: treatment.costo,
-    cuenta: treatment.aCuenta,
+    // Se normaliza también de salida: es la frontera donde el backend valida.
+    costo: toNumber(treatment.costo),
+    cuenta: toNumber(treatment.aCuenta),
   }
 }
 

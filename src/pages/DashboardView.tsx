@@ -10,7 +10,14 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { DollarSign, Loader2, Stethoscope, Users } from "lucide-react"
+import {
+  DollarSign,
+  HandCoins,
+  Loader2,
+  Stethoscope,
+  Users,
+  Wallet,
+} from "lucide-react"
 
 import {
   Card,
@@ -25,13 +32,12 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart"
-import { useAgendaYear } from "@/hooks/useAgenda"
-import { usePatientsWithTreatments } from "@/hooks/usePatients"
+import { useDashboard } from "@/hooks/useDashboard"
 import {
-  appointmentsByMonth,
+  appointmentsSeries,
+  formatCompactCurrency,
   formatCurrency,
-  salesByMonth,
-  treatmentsTotal,
+  salesSeries,
 } from "@/lib/clinic-data"
 
 const salesConfig = {
@@ -44,49 +50,47 @@ const apptConfig = {
 
 export function DashboardView() {
   const year = new Date().getFullYear()
-  const {
-    patients,
-    total: pacientesTotales,
-    isLoading: loadingPatients,
-    error: patientsError,
-  } = usePatientsWithTreatments()
-  const {
-    appointments,
-    isLoading: loadingAppointments,
-    error: appointmentsError,
-  } = useAgendaYear(year)
+  const { metrics: data, isLoading, isFetching, error } = useDashboard(year)
 
-  const ventasTotales = React.useMemo(
-    () => patients.reduce((sum, p) => sum + treatmentsTotal(p.treatments), 0),
-    [patients],
+  const salesData = React.useMemo(
+    () => salesSeries(data?.ventasPorMes ?? []),
+    [data?.ventasPorMes],
   )
-
-  const salesData = React.useMemo(() => salesByMonth(patients), [patients])
   const apptData = React.useMemo(
-    () => appointmentsByMonth(appointments),
-    [appointments],
+    () => appointmentsSeries(data?.citasPorMes ?? []),
+    [data?.citasPorMes],
   )
-
-  const isLoading = loadingPatients || loadingAppointments
-  const error = patientsError ?? appointmentsError
 
   const metrics = [
     {
       label: "Ventas totales",
-      value: formatCurrency(ventasTotales),
-      hint: "Acumulado de tratamientos",
+      value: formatCurrency(data?.ventasTotales ?? 0),
+      hint: `Tratamientos de ${year}`,
       icon: DollarSign,
     },
     {
+      label: "Dinero a cuenta",
+      value: formatCurrency(data?.dineroACuenta ?? 0),
+      hint: "Abonos recibidos",
+      icon: Wallet,
+    },
+    {
+      label: "Dinero por cobrar",
+      value: formatCurrency(data?.dineroPorCobrar ?? 0),
+      hint: "Saldo pendiente de los pacientes",
+      icon: HandCoins,
+    },
+    {
       label: "Consultas totales",
-      value: appointments.length.toString(),
+      value: String(data?.consultasTotales ?? 0),
       hint: `Citas registradas en ${year}`,
       icon: Stethoscope,
     },
     {
       label: "Pacientes totales",
-      value: pacientesTotales.toString(),
-      hint: "Expedientes activos",
+      value: String(data?.pacientesTotales ?? 0),
+      // El backend no acota este dato por año: es el histórico de activos.
+      hint: "Expedientes activos (histórico)",
       icon: Users,
     },
   ]
@@ -102,7 +106,7 @@ export function DashboardView() {
             Métricas clave del consultorio en {year}.
           </p>
         </div>
-        {isLoading && (
+        {(isLoading || isFetching) && (
           <span className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
             Cargando...
@@ -118,9 +122,12 @@ export function DashboardView() {
         </p>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="flex flex-wrap justify-center gap-4">
         {metrics.map((m) => (
-          <Card key={m.label} className="border-border/70">
+          <Card
+            key={m.label}
+            className="w-full border-border/70 sm:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.667rem)]"
+          >
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardDescription>{m.label}</CardDescription>
@@ -159,7 +166,7 @@ export function DashboardView() {
                   tickLine={false}
                   axisLine={false}
                   width={48}
-                  tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                  tickFormatter={formatCompactCurrency}
                 />
                 <ChartTooltip
                   content={

@@ -4,11 +4,11 @@ import { persist } from "zustand/middleware"
 import type { Usuario } from "@/types/clinic"
 
 export type AuthState = {
-  token: string | null
-  usuario: Usuario | null
-  setSession: (token: string, usuario: Usuario) => void
-  setUsuario: (usuario: Usuario) => void
-  clearSession: () => void
+    token: string | null
+    usuario: Usuario | null
+    setSession: (token: string, usuario: Usuario) => void
+    setUsuario: (usuario: Usuario) => void
+    clearSession: () => void
 }
 
 export const AUTH_STORAGE_KEY = "dentalcare.auth"
@@ -19,19 +19,23 @@ export const AUTH_STORAGE_KEY = "dentalcare.auth"
  * de que React monte.
  */
 export const useAuthStore = create<AuthState>()(
-  persist(
-    (set) => ({
-      token: null,
-      usuario: null,
-      setSession: (token, usuario) => set({ token, usuario }),
-      setUsuario: (usuario) => set({ usuario }),
-      clearSession: () => set({ token: null, usuario: null }),
-    }),
-    {
-      name: AUTH_STORAGE_KEY,
-      partialize: (state) => ({ token: state.token, usuario: state.usuario }),
-    },
-  ),
+    persist(
+        (set) => ({
+            token: null,
+            usuario: null,
+            setSession: (token, usuario) => set({ token, usuario }),
+            setUsuario: (usuario) => set({ usuario }),
+            clearSession: () => set({ token: null, usuario: null }),
+        }),
+        {
+            name: AUTH_STORAGE_KEY,
+            partialize: (state) => ({ token: state.token, usuario: state.usuario }),
+        },
+    ),
 )
 
 export const isAuthenticated = () => Boolean(useAuthStore.getState().token)
+
+/** Rol del usuario persistido, para los loaders que protegen rutas de staff. */
+export const isMedico = () =>
+    useAuthStore.getState().usuario?.tipo === "medico"
