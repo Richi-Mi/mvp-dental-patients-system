@@ -1,6 +1,7 @@
 "use client"
 
 import { Link, NavLink, Outlet } from "react-router"
+import { Tooltip } from "@base-ui/react/tooltip"
 import { ChevronRight, Loader2, Search, UserPlus } from "lucide-react"
 
 import {
@@ -10,7 +11,33 @@ import {
 } from "@/components/ui/input-group"
 import { Button } from "@/components/ui/button"
 import { usePatients } from "@/hooks/usePatients"
+import { formatAge, formatLongDate } from "@/lib/clinic-data"
 import { cn } from "@/lib/utils"
+
+/** Edad del paciente; al pasar el cursor muestra la fecha de nacimiento. */
+function PatientAge({ birthDate }: { birthDate: string | null }) {
+  if (!birthDate) return <span>Edad sin registrar</span>
+
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger
+        delay={200}
+        render={
+          <span className="cursor-help underline decoration-dotted underline-offset-2" />
+        }
+      >
+        {formatAge(birthDate)}
+      </Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Positioner side="top" sideOffset={6} className="isolate z-60">
+          <Tooltip.Popup className="rounded-md border border-border/70 bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md">
+            Nació el {formatLongDate(birthDate)}
+          </Tooltip.Popup>
+        </Tooltip.Positioner>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  )
+}
 
 export function PatientsView() {
   const { filtered, patients, search, setSearch, isLoading, error } =
@@ -98,7 +125,7 @@ export function PatientsView() {
                           {p.name}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {p.age ? `${p.age} años` : "Edad no registrada"}
+                          <PatientAge birthDate={p.birthDate} />
                           {p.gender ? ` · ${p.gender}` : ""}
                         </p>
                       </div>

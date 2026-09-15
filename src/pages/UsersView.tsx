@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ConfirmDialog } from "@/components/custom/confirm-dialog"
 import { EditAssistantDialog } from "@/components/custom/edit-assistant-dialog"
 import { NewAssistantDialog } from "@/components/custom/new-assistant-dialog"
 import { useUsers } from "@/hooks/useUsers"
@@ -49,7 +50,7 @@ export function UsersView() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Usuarios
+            Asistentes
           </h1>
           <p className="text-sm text-muted-foreground">
             Asistentes con acceso al consultorio.
@@ -148,25 +149,25 @@ function AssistantRow({
         <div className="flex items-center justify-end gap-2">
           <EditAssistantDialog usuario={usuario} />
           {usuario.activo ? (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={isUpdating}
-              className="text-rose-600 hover:text-rose-700"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `¿Eliminar a ${usuario.nombre}? Perderá el acceso al sistema; su historial se conserva y puedes reactivarlo después.`,
-                  )
-                ) {
-                  // El error se muestra desde `updateError`.
-                  onDeactivate(usuario.correo).catch(() => {})
-                }
-              }}
-            >
-              <Trash2 data-icon="inline-start" />
-              Eliminar
-            </Button>
+            <ConfirmDialog
+              trigger={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isUpdating}
+                  className="text-rose-600 hover:text-rose-700"
+                >
+                  <Trash2 data-icon="inline-start" />
+                  Eliminar
+                </Button>
+              }
+              title={`¿Eliminar a ${usuario.nombre}?`}
+              description="Perderá el acceso al sistema; su historial se conserva y puedes reactivarlo después."
+              confirmLabel="Eliminar"
+              successMessage={`${usuario.nombre} ya no tiene acceso al sistema.`}
+              cancelMessage="Se canceló la eliminación del asistente."
+              onConfirm={() => onDeactivate(usuario.correo)}
+            />
           ) : (
             <Button
               size="sm"

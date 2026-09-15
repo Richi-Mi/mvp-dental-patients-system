@@ -14,14 +14,16 @@ import {
 } from "@/components/ui/card"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/custom/calendar"
 import { usePatients } from "@/hooks/usePatients"
+import { todayISO, validateBirthDate } from "@/lib/clinic-data"
 
 const fieldControl =
   "flex h-9 w-full cursor-pointer rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
 
 const EMPTY = {
   name: "",
-  age: "",
+  birthDate: "",
   gender: "Femenino",
   phone: "",
   email: "",
@@ -40,8 +42,12 @@ export function PatientFormView() {
   const navigate = useNavigate()
   const { createPatient, isCreating, createError } = usePatients()
   const [form, setForm] = React.useState(EMPTY)
+  const [birthDateError, setBirthDateError] = React.useState<string | null>(
+    null,
+  )
 
   const redirectTo = searchParams.get("redirectTo")
+  const today = todayISO()
 
   const set = (key: keyof typeof EMPTY) => (value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -54,7 +60,17 @@ export function PatientFormView() {
     e.preventDefault()
     if (!form.name.trim() || isCreating) return
 
-    const patient = await createPatient({ ...form, name: form.name.trim() })
+    const dateError = validateBirthDate(form.birthDate, today, true)
+    setBirthDateError(dateError)
+    if (dateError) return
+
+    let patient
+    try {
+      patient = await createPatient({ ...form, name: form.name.trim() })
+    } catch {
+      // El mensaje del backend (p. ej. un 400) se muestra vía `createError`.
+      return
+    }
 
     if (redirectTo) {
       const separator = redirectTo.includes("?") ? "&" : "?"
@@ -88,8 +104,8 @@ export function PatientFormView() {
         <CardHeader>
           <CardTitle className="text-base">Datos del expediente</CardTitle>
           <CardDescription>
-            El paciente queda asignado a tu usuario. Solo el nombre es
-            obligatorio; el resto se puede completar después.
+            El paciente queda asignado a tu usuario. El nombre y la fecha de
+            nacimiento son obligatorios; el resto se puede completar después.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -108,14 +124,32 @@ export function PatientFormView() {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field>
-                  <FieldLabel htmlFor="np-age">Edad</FieldLabel>
-                  <Input
-                    id="np-age"
-                    type="number"
-                    min="0"
-                    value={form.age}
-                    onChange={(e) => set("age")(e.target.value)}
+                  <FieldLabel htmlFor="np-birthdate">
+                    Fecha de nacimiento
+                  </FieldLabel>
+                  <DatePicker
+                    id="np-birthdate"
+                    captionLayout="dropdown"
+                    isDateDisabled={(date) => date > today}
+                    placeholder="Selecciona la fecha"
+                    value={form.birthDate}
+                    onChange={(date) => {
+                      set("birthDate")(date)
+                      setBirthDateError(null)
+                    }}
+                    aria-invalid={birthDateError ? true : undefined}
+                    aria-describedby={
+                      birthDateError ? "np-birthdate-error" : undefined
+                    }
                   />
+                  {birthDateError && (
+                    <p
+                      id="np-birthdate-error"
+                      className="text-xs text-rose-700"
+                    >
+                      {birthDateError}
+                    </p>
+                  )}
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="np-gender">Sexo</FieldLabel>

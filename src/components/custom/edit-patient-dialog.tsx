@@ -16,7 +16,9 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { DatePicker } from "@/components/custom/calendar"
 import { usePatient } from "@/hooks/usePatients"
+import { todayISO, validateBirthDate } from "@/lib/clinic-data"
 import type { Patient } from "@/types/clinic"
 
 const fieldControl =
@@ -25,7 +27,7 @@ const fieldControl =
 function toForm(patient: Patient) {
   return {
     name: patient.name,
-    age: patient.age ? String(patient.age) : "",
+    birthDate: patient.birthDate ?? "",
     gender: patient.gender || "Femenino",
     phone: patient.phone,
     email: patient.email,
@@ -40,6 +42,10 @@ export function EditPatientDialog({ patient }: { patient: Patient }) {
   const [open, setOpen] = React.useState(false)
   const [form, setForm] = React.useState(() => toForm(patient))
   const [error, setError] = React.useState<string | null>(null)
+  const [birthDateError, setBirthDateError] = React.useState<string | null>(
+    null,
+  )
+  const today = todayISO()
 
   const set = (key: keyof ReturnType<typeof toForm>) => (value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -47,8 +53,21 @@ export function EditPatientDialog({ patient }: { patient: Patient }) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim() || isUpdating) return
+
+    // Al editar la fecha es opcional: vacía no es error.
+    const dateError = validateBirthDate(form.birthDate, today)
+    setBirthDateError(dateError)
+    if (dateError) return
+
+    const { birthDate, ...rest } = form
+    const original = patient.birthDate ?? ""
     try {
-      await updatePatient({ ...form, name: form.name.trim() })
+      await updatePatient({
+        ...rest,
+        name: form.name.trim(),
+        // Solo se manda si cambió; vaciarla manda `null` para borrarla.
+        ...(birthDate !== original && { birthDate: birthDate || null }),
+      })
       setOpen(false)
     } catch (err) {
       setError(
@@ -65,6 +84,7 @@ export function EditPatientDialog({ patient }: { patient: Patient }) {
         if (next) {
           setForm(toForm(patient))
           setError(null)
+          setBirthDateError(null)
         }
         setOpen(next)
       }}
@@ -98,14 +118,31 @@ export function EditPatientDialog({ patient }: { patient: Patient }) {
             </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field>
-                <FieldLabel htmlFor="ep-age">Edad</FieldLabel>
-                <Input
-                  id="ep-age"
-                  type="number"
-                  min="0"
-                  value={form.age}
-                  onChange={(e) => set("age")(e.target.value)}
+                <FieldLabel htmlFor="ep-birthdate">
+                  Fecha de nacimiento
+                </FieldLabel>
+                <DatePicker
+                  id="ep-birthdate"
+                  captionLayout="dropdown"
+                  isDateDisabled={(date) => date > today}
+                  placeholder="Sin registrar"
+                  format="short"
+                  clearable
+                  value={form.birthDate}
+                  onChange={(date) => {
+                    set("birthDate")(date)
+                    setBirthDateError(null)
+                  }}
+                  aria-invalid={birthDateError ? true : undefined}
+                  aria-describedby={
+                    birthDateError ? "ep-birthdate-error" : undefined
+                  }
                 />
+                {birthDateError && (
+                  <p id="ep-birthdate-error" className="text-xs text-rose-700">
+                    {birthDateError}
+                  </p>
+                )}
               </Field>
               <Field>
                 <FieldLabel htmlFor="ep-gender">Sexo</FieldLabel>

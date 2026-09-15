@@ -22,11 +22,13 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Separator } from "@/components/ui/separator"
+import { ConfirmDialog } from "@/components/custom/confirm-dialog"
 import { EditPatientDialog } from "@/components/custom/edit-patient-dialog"
 import { TreatmentsTable } from "@/components/custom/treatments-table"
 import { usePatient, usePatients } from "@/hooks/usePatients"
 import {
   STATUS_META,
+  formatAge,
   formatDayName,
   formatLongDate,
 } from "@/lib/clinic-data"
@@ -61,19 +63,6 @@ export function PatientDetailView() {
     saveTreatmentsError,
   } = usePatient(Number.isFinite(patientId) ? patientId : undefined)
   const { deletePatient, isDeleting } = usePatients()
-
-  async function handleDeletePatient() {
-    if (!patient) return
-    if (
-      !window.confirm(
-        `¿Dar de baja a ${patient.name}? El expediente dejará de aparecer en la lista.`,
-      )
-    ) {
-      return
-    }
-    await deletePatient(patient.id)
-    navigate("/pacientes", { replace: true })
-  }
 
   if (isLoading) {
     return (
@@ -110,21 +99,31 @@ export function PatientDetailView() {
             <div>
               <CardTitle className="text-xl">{patient.name}</CardTitle>
               <p className="text-sm text-muted-foreground">
-                {patient.age ? `${patient.age} años` : "Edad no registrada"}
+                {patient.birthDate
+                  ? `${formatAge(patient.birthDate)} (${formatLongDate(patient.birthDate)})`
+                  : "Edad sin registrar"}
                 {patient.gender ? ` · ${patient.gender}` : ""}
               </p>
             </div>
             <div className="ml-auto flex items-center gap-2">
               <EditPatientDialog patient={patient} />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleDeletePatient}
-                disabled={isDeleting}
-              >
-                <Trash2 data-icon="inline-start" />
-                Dar de baja
-              </Button>
+              <ConfirmDialog
+                trigger={
+                  <Button variant="outline" size="sm" disabled={isDeleting}>
+                    <Trash2 data-icon="inline-start" />
+                    Dar de baja
+                  </Button>
+                }
+                title={`¿Dar de baja a ${patient.name}?`}
+                description="El expediente dejará de aparecer en la lista."
+                confirmLabel="Dar de baja"
+                successMessage={`${patient.name} fue dado de baja.`}
+                cancelMessage="Se canceló la baja del paciente."
+                onConfirm={async () => {
+                  await deletePatient(patient.id)
+                  navigate("/pacientes", { replace: true })
+                }}
+              />
             </div>
           </div>
         </CardHeader>

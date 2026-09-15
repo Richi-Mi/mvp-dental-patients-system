@@ -27,7 +27,8 @@ export type Appointment = {
 export type Patient = {
   id: number
   name: string
-  age: number
+  /** `yyyy-mm-dd`; `null` si no se capturó (pacientes anteriores). */
+  birthDate: string | null
   gender: string
   phone: string
   email: string
@@ -43,7 +44,7 @@ export type Patient = {
 
 export type PatientInput = {
   name: string
-  age: number | string
+  birthDate: string | null
   gender: string
   phone: string
   email: string
@@ -80,5 +81,7 @@ export type Usuario = {
   correo: string
   nombre: string
   tipo: "medico" | "asistente"
+  /** `null` si no se ha registrado (usuarios anteriores). */
+  genero: "femenino" | "masculino" | null
   activo: boolean
 }

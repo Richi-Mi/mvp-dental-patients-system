@@ -30,9 +30,9 @@ export async function getPatient(id: number): Promise<Patient> {
   return toPatient(data)
 }
 
-/** `POST /pacientes` */
+/** `POST /pacientes` — `birthDate` (`yyyy-mm-dd`) es obligatoria. */
 export async function createPatient(
-  input: PatientInput & { medicoEmail?: string | null },
+  input: PatientInput & { birthDate: string; medicoEmail?: string | null },
 ): Promise<Patient> {
   const { data } = await api.post<PacienteDTO>(
     ENDPOINTS.pacientes.root,
@@ -46,6 +46,8 @@ export async function createPatient(
  *
  * Ojo: si se envía `treatments`, el backend **reemplaza** por completo la
  * lista guardada, así que hay que mandar siempre la lista final completa.
+ *
+ * `birthDate`: omitida = no cambia; `null` = se borra la fecha guardada.
  */
 export async function updatePatient(
   id: number,

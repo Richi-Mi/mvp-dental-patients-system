@@ -5,6 +5,7 @@ import { Link } from "react-router"
 import {
   ChevronLeft,
   ChevronRight,
+  FunnelX,
   Loader2,
   Search,
   Stethoscope,
@@ -19,6 +20,12 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select"
+import {
   Table,
   TableBody,
   TableCell,
@@ -26,21 +33,44 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ConfirmDialog } from "@/components/custom/confirm-dialog"
 import { NewAppointmentDialog } from "@/components/custom/new-appointment-dialog"
 import { useAgenda, type AgendaDay } from "@/hooks/useAgenda"
+import { useMediaQuery } from "@/hooks/useMediaQuery"
+import { useNewAppointmentDialog } from "@/hooks/useNewAppointmentDialog"
 import {
+  APPOINTMENT_STATUSES,
   STATUS_META,
   closedDaysLabel,
   dayOfMonth,
+  formatDayName,
   formatLongDate,
   formatWeekRange,
+  nextOpenDay,
+  shiftOpenDay,
   shortDayName,
+  todayISO,
 } from "@/lib/clinic-data"
 import { cn } from "@/lib/utils"
-import type { Appointment, Usuario } from "@/types/clinic"
+import type { Appointment, AppointmentStatus, Usuario } from "@/types/clinic"
 
 const fieldControl =
   "flex h-9 w-full cursor-pointer rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+
+/**
+ * ¿El foco está donde Shift + flechas ya tiene un uso propio (seleccionar
+ * texto en un campo, recorrer un selector o un diálogo)? Ahí no se roba la
+ * tecla para los atajos de la agenda.
+ */
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return (
+    target.isContentEditable ||
+    target.closest(
+      'input, textarea, select, [role="listbox"], [role="menu"], [role="dialog"]',
+    ) !== null
+  )
+}
 
 export function AgendaView() {
   const {
@@ -54,11 +84,18 @@ export function AgendaView() {
     goToPreviousWeek,
     goToNextWeek,
     goToCurrentWeek,
+    isCurrentWeek,
+    dayParam,
+    selectedDay,
+    selectDay,
+    clearFilters,
     isLoading,
     isFetching,
     error,
     deleteAppointment,
     isDeleting,
+    updateAppointment,
+    updateError,
     isAsistente,
     medicos,
     medicoActivo,
@@ -69,12 +106,69 @@ export function AgendaView() {
   } = useAgenda()
 
   // El input es un borrador: la búsqueda solo se aplica al enviar el formulario
-  // (Enter o el botón "Buscar"), no en cada tecla.
+  // (Enter o el botón "Buscar"), no en cada tecla. Si `?term=` cambia por otra
+  // vía (atrás/adelante del navegador) el borrador se alinea con la URL.
   const [term, setTerm] = React.useState(search)
+  const [syncedSearch, setSyncedSearch] = React.useState(search)
+  if (search !== syncedSearch) {
+    setSyncedSearch(search)
+    setTerm(search)
+  }
 
-  // `DELETE /citas/:id` solo alcanza las citas del médico del token, así que
-  // un asistente no puede borrar en la agenda que está consultando.
-  const canDelete = !isAsistente
+  // En teléfono se ve un solo día (`?day=`) y las flechas avanzan de día en
+  // día; al cruzar a otra semana también cambian `?year=&week=`.
+  const isMobile = useMediaQuery("(max-width: 639px)")
+  const visibleDays = isMobile && selectedDay ? [selectedDay] : weekDays
+
+  const goToPrevious =
+    isMobile && selectedDay
+      ? () => selectDay(shiftOpenDay(selectedDay.date, -1))
+      : goToPreviousWeek
+  const goToNext =
+    isMobile && selectedDay
+      ? () => selectDay(shiftOpenDay(selectedDay.date, 1))
+      : goToNextWeek
+  const goToCurrent = isMobile
+    ? () => selectDay(nextOpenDay(todayISO()))
+    : goToCurrentWeek
+
+  // Atajos: Shift + ←/→ cambian de semana y Shift + ↑ abre "Nueva cita".
+  // `useEffectEvent` lee siempre los handlers actuales sin re-suscribir el
+  // listener en cada render.
+  const newAppointment = useNewAppointmentDialog()
+  const onShortcut = React.useEffectEvent((e: KeyboardEvent) => {
+    if (!e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return
+    if (e.defaultPrevented || newAppointment.open) return
+    if (isInteractiveTarget(e.target)) return
+
+    if (e.key === "ArrowLeft") goToPreviousWeek()
+    else if (e.key === "ArrowRight") goToNextWeek()
+    else if (e.key === "ArrowUp" && !e.repeat) newAppointment.setOpen(true)
+    else return
+    e.preventDefault()
+  })
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => onShortcut(e)
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [])
+
+  // El día elegido solo filtra en teléfono; en escritorio no se ve.
+  const hasFilters =
+    search !== "" ||
+    !isCurrentWeek ||
+    (isMobile && dayParam !== null && dayParam !== todayISO())
+
+  // `PUT` y `DELETE /citas/:id` solo alcanzan las citas del médico del token,
+  // así que un asistente no puede editar ni borrar en la agenda que consulta.
+  const canEdit = !isAsistente
+
+  const changeStatus = React.useCallback(
+    (id: string, status: AppointmentStatus) =>
+      updateAppointment({ id, input: { status } }),
+    [updateAppointment],
+  )
 
   return (
     <div className="flex flex-col gap-6">
@@ -85,8 +179,8 @@ export function AgendaView() {
           </h1>
           <p className="text-sm text-muted-foreground">
             {isAsistente && medicoActivo
-              ? `Citas de la semana de ${medicoActivo.nombre}.`
-              : "Citas de la semana."}
+              ? `Citas ${isMobile ? "del día" : "de la semana"} de ${medicoActivo.nombre}.`
+              : `Citas ${isMobile ? "del día" : "de la semana"}.`}
             {closedDaysLabel() && ` El consultorio no atiende ${closedDaysLabel()}.`}
           </p>
         </div>
@@ -127,31 +221,56 @@ export function AgendaView() {
             <Search />
             Buscar
           </Button>
+          {hasFilters && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setTerm("")
+                clearFilters()
+              }}
+              title={
+                isMobile
+                  ? "Quitar la búsqueda y volver a hoy"
+                  : "Quitar la búsqueda y volver a la semana actual"
+              }
+            >
+              <FunnelX />
+              {/* En teléfono solo cabe el icono junto al buscador. */}
+              <span className="max-sm:sr-only">Limpiar</span>
+            </Button>
+          )}
         </form>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center justify-between gap-1 sm:justify-start">
           <Button
             variant="outline"
             size="icon"
-            onClick={goToPreviousWeek}
-            aria-label="Semana anterior"
+            onClick={goToPrevious}
+            aria-label={isMobile ? "Día anterior" : "Semana anterior"}
+            title={isMobile ? undefined : "Semana anterior (Shift + ←)"}
+            aria-keyshortcuts={isMobile ? undefined : "Shift+ArrowLeft"}
           >
             <ChevronLeft />
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            onClick={goToCurrentWeek}
-            className="min-w-56"
-            title="Ir a la semana actual"
+            onClick={goToCurrent}
+            className="min-w-0 flex-1 sm:min-w-56 sm:flex-none"
+            title={isMobile ? "Ir a hoy" : "Ir a la semana actual"}
           >
-            {formatWeekRange(year, week)}
+            {isMobile && selectedDay
+              ? `${formatDayName(selectedDay.date)}, ${formatLongDate(selectedDay.date)}`
+              : formatWeekRange(year, week)}
           </Button>
           <Button
             variant="outline"
             size="icon"
-            onClick={goToNextWeek}
-            aria-label="Semana siguiente"
+            onClick={goToNext}
+            aria-label={isMobile ? "Día siguiente" : "Semana siguiente"}
+            title={isMobile ? undefined : "Semana siguiente (Shift + →)"}
+            aria-keyshortcuts={isMobile ? undefined : "Shift+ArrowRight"}
           >
             <ChevronRight />
           </Button>
@@ -163,6 +282,14 @@ export function AgendaView() {
           {error instanceof Error
             ? error.message
             : "No se pudieron cargar las citas."}
+        </p>
+      )}
+
+      {updateError && (
+        <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {updateError instanceof Error
+            ? updateError.message
+            : "No se pudo actualizar el estatus de la cita."}
         </p>
       )}
 
@@ -178,10 +305,10 @@ export function AgendaView() {
             isFetching && "opacity-60",
           )}
         >
-          <Table className="min-w-[840px] table-fixed">
+          <Table className={cn("table-fixed", !isMobile && "min-w-210")}>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                {weekDays.map((day) => (
+                {visibleDays.map((day) => (
                   <TableHead
                     key={day.date}
                     aria-current={day.isToday ? "date" : undefined}
@@ -217,12 +344,13 @@ export function AgendaView() {
 
             <TableBody>
               <TableRow className="hover:bg-transparent">
-                {weekDays.map((day) => (
+                {visibleDays.map((day) => (
                   <DayColumn
                     key={day.date}
                     day={day}
                     isDeleting={isDeleting}
-                    onDelete={canDelete ? deleteAppointment : undefined}
+                    onDelete={canEdit ? deleteAppointment : undefined}
+                    onStatusChange={canEdit ? changeStatus : undefined}
                   />
                 ))}
               </TableRow>
@@ -265,11 +393,13 @@ function DayColumn({
   day,
   isDeleting,
   onDelete,
+  onStatusChange,
 }: {
   day: AgendaDay
   isDeleting: boolean
-  /** Sin `onDelete` las tarjetas se muestran en modo solo lectura. */
-  onDelete?: (id: string) => void
+  /** Sin `onDelete` ni `onStatusChange` las tarjetas son de solo lectura. */
+  onDelete?: (id: string) => Promise<unknown>
+  onStatusChange?: (id: string, status: AppointmentStatus) => Promise<unknown>
 }) {
   return (
     <TableCell
@@ -290,49 +420,109 @@ function DayColumn({
             return (
               <article
                 key={appt.id}
-                className="group flex flex-col gap-1.5 rounded-lg border border-border/70 bg-card p-2.5 transition-shadow hover:shadow-sm"
+                className="group flex flex-col overflow-hidden rounded-lg border border-border/70 bg-card transition-shadow hover:shadow-sm"
               >
-                <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center justify-between gap-1 bg-sky-100 px-2.5 py-1.5 dark:bg-sky-950/60">
                   <span className="text-sm font-semibold tabular-nums text-foreground">
                     {appt.time}
                   </span>
-                  <Badge className={cn(status.className, "text-[10px]")}>
-                    {status.label}
-                  </Badge>
+                  {onStatusChange ? (
+                    <StatusSelect
+                      appointment={appt}
+                      onChange={onStatusChange}
+                    />
+                  ) : (
+                    <Badge className={cn(status.className, "text-[10px]")}>
+                      {status.label}
+                    </Badge>
+                  )}
                 </div>
 
-                <PatientLink appointment={appt} />
+                <div className="flex flex-col gap-1.5 p-2.5">
+                  <PatientLink appointment={appt} />
 
-                <p className="line-clamp-2 text-xs text-muted-foreground">
-                  {appt.motivo}
-                </p>
+                  <p className="line-clamp-2 text-xs text-muted-foreground">
+                    {appt.motivo}
+                  </p>
 
-                {onDelete && (
-                  <button
-                    type="button"
-                    disabled={isDeleting}
-                    aria-label={`Eliminar cita de ${appt.patientName || "paciente"}`}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          "¿Eliminar esta cita? La acción no se puede deshacer.",
-                        )
-                      ) {
-                        onDelete(appt.id)
+                  {onDelete && (
+                    <ConfirmDialog
+                      trigger={
+                        <button
+                          type="button"
+                          disabled={isDeleting}
+                          aria-label={`Eliminar cita de ${appt.patientName || "paciente"}`}
+                          className="flex items-center gap-1 self-end text-xs text-muted-foreground opacity-0 transition-opacity hover:text-rose-600 focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+                        >
+                          <Trash2 className="size-3.5" />
+                          Eliminar
+                        </button>
                       }
-                    }}
-                    className="flex items-center gap-1 self-end text-xs text-muted-foreground opacity-0 transition-opacity hover:text-rose-600 focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
-                  >
-                    <Trash2 className="size-3.5" />
-                    Eliminar
-                  </button>
-                )}
+                      title="¿Eliminar esta cita?"
+                      description={`${formatLongDate(appt.date)} · ${appt.time} h${appt.patientName ? ` — ${appt.patientName}` : ""}. La acción no se puede deshacer.`}
+                      confirmLabel="Eliminar cita"
+                      successMessage="La cita se eliminó."
+                      cancelMessage="Se canceló la eliminación de la cita."
+                      onConfirm={() => onDelete(appt.id)}
+                    />
+                  )}
+                </div>
               </article>
             )
           })}
         </div>
       )}
     </TableCell>
+  )
+}
+
+/**
+ * Chip de estatus que abre un selector y guarda con `PUT /citas/:id`. Mientras
+ * se guarda muestra el estatus elegido; si falla, regresa al que tiene la cita.
+ */
+function StatusSelect({
+  appointment,
+  onChange,
+}: {
+  appointment: Appointment
+  onChange: (id: string, status: AppointmentStatus) => Promise<unknown>
+}) {
+  const [pending, setPending] = React.useState<AppointmentStatus | null>(null)
+  const value = pending ?? appointment.status
+  const meta = STATUS_META[value]
+
+  return (
+    <Select
+      value={value}
+      disabled={pending !== null}
+      onValueChange={(next) => {
+        if (!next || next === appointment.status) return
+        setPending(next)
+        onChange(appointment.id, next)
+          // El error se muestra arriba de la agenda (`updateError`).
+          .catch(() => {})
+          .finally(() => setPending(null))
+      }}
+    >
+      <SelectTrigger
+        size="sm"
+        aria-label={`Estatus de la cita: ${meta.label}`}
+        className={cn(
+          meta.className,
+          "h-5 cursor-pointer gap-0.5 rounded-4xl border-transparent py-0 pr-1.5 pl-2 text-[10px] font-medium shadow-none data-[size=sm]:h-5 [&_svg]:size-3 [&_svg]:text-current",
+        )}
+      >
+        {pending !== null && <Loader2 className="animate-spin" />}
+        {meta.label}
+      </SelectTrigger>
+      <SelectContent align="end" alignItemWithTrigger={false}>
+        {APPOINTMENT_STATUSES.map((status) => (
+          <SelectItem key={status} value={status}>
+            {STATUS_META[status].label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 
@@ -404,7 +594,7 @@ function PatientLink({ appointment }: { appointment: Appointment }) {
   return (
     <Link
       to={`/pacientes/${appointment.patientId}`}
-      className="truncate text-sm font-medium text-primary underline-offset-2 hover:underline"
+      className="text-sm font-medium wrap-break-word text-primary underline-offset-2 hover:underline"
       title={appointment.patientName || `Paciente #${appointment.patientId}`}
     >
       {appointment.patientName || `Paciente #${appointment.patientId}`}

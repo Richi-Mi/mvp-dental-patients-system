@@ -5,6 +5,7 @@ import {
       useQuery,
     useQueryClient,
 } from "@tanstack/react-query"
+import { useSearchParams } from "react-router"
 
 import { citasActions } from "@/actions"
 import type { CitasQuery } from "@/api/types"
@@ -13,12 +14,45 @@ import {
     isoWeekDates,
     onlyOpenDays,
     parseISO,
+    startOfISOWeek,
+    toISODateString,
     todayISO,
 } from "@/lib/clinic-data"
 import { queryKeys } from "@/lib/query-keys"
-import { useUiStore } from "@/store/ui.store"
 import type { Appointment, AppointmentInput } from "@/types/clinic"
 import { useActiveMedico } from "./useMedicos"
+
+/** Parámetros de la URL que controla la agenda. */
+const AGENDA_PARAMS = ["year", "week", "day", "term"] as const
+
+/** `?day=yyyy-mm-dd` si es una fecha real (descarta `2026-02-31`, etc.). */
+function readDay(params: URLSearchParams): string | null {
+    const day = params.get("day")
+    if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return null
+    return toISODateString(parseISO(day)) === day ? day : null
+}
+
+/**
+ * Semana ISO de la URL (`?year=&week=`). Si falta o no es válida se toma la
+ * de `?day=` y, sin él, la semana actual; una semana inexistente (la 53 de un
+ * año que solo tiene 52) se normaliza a la que realmente cae.
+ */
+function readWeek(
+    params: URLSearchParams,
+    day: string | null,
+): { year: number; week: number } {
+    const year = Number(params.get("year"))
+    const week = Number(params.get("week"))
+    const valid =
+        Number.isInteger(year) &&
+        Number.isInteger(week) &&
+        year >= 1970 &&
+        year <= 9999 &&
+        week >= 1 &&
+        week <= 53
+    if (valid) return getISOWeek(startOfISOWeek(year, week))
+    return getISOWeek(day ? parseISO(day) : new Date())
+}
 
 function sortByDateTime(a: Appointment, b: Appointment) {
     return a.date === b.date
@@ -34,8 +68,10 @@ export type AgendaDay = {
 }
 
 /**
- * Agenda semanal del médico autenticado (`/citas`). La semana ISO y la
- * búsqueda viven en el store de Zustand; el backend filtra por ambas.
+ * Agenda semanal del médico autenticado (`/citas`). La semana ISO, el día
+ * elegido (vista de teléfono) y la búsqueda viven en la URL
+ * (`?year=&week=&day=&term=`), así que se pueden compartir, recargar y
+ * recorrer con atrás/adelante; el backend filtra por semana y búsqueda.
  *
  * `search` es el término ya confirmado por el usuario (Enter o botón "Buscar"),
  * no lo que está escribiendo: la vista guarda el borrador y llama a `setSearch`
@@ -46,13 +82,79 @@ export type AgendaDay = {
  * a `/citas`.
  */
 export function useAgenda() {
-    const year = useUiStore((s) => s.agendaYear)
-    const week = useUiStore((s) => s.agendaWeek)
-    const search = useUiStore((s) => s.agendaSearch)
-    const setSearch = useUiStore((s) => s.setAgendaSearch)
-    const shiftWeek = useUiStore((s) => s.shiftAgendaWeek)
-    const resetWeek = useUiStore((s) => s.resetAgendaWeek)
-    const setWeek = useUiStore((s) => s.setAgendaWeek)
+    const [searchParams, setSearchParams] = useSearchParams()
+    const day = readDay(searchParams)
+    const { year, week } = readWeek(searchParams, day)
+    const search = searchParams.get("term") ?? ""
+
+    const current = getISOWeek(new Date())
+    const isCurrentWeek = year === current.year && week === current.week
+
+    // Se parte de los parámetros actuales para no perder los ajenos a la
+    // agenda (p. ej. `?cita=nueva` del diálogo).
+    const updateParams = React.useCallback(
+        (patch: Record<string, string | null>) => {
+            setSearchParams((prev) => {
+                const next = new URLSearchParams(prev)
+                for (const [key, value] of Object.entries(patch)) {
+                    if (value) next.set(key, value)
+                    else next.delete(key)
+                }
+                return next
+            })
+        },
+        [setSearchParams],
+    )
+
+    // Cambiar de semana descarta el día elegido: ya no pertenece a ella.
+    const setWeek = React.useCallback(
+        (y: number, w: number) =>
+            updateParams({ year: String(y), week: String(w), day: null }),
+        [updateParams],
+    )
+
+    /** Elige un día y, en el mismo cambio de URL, la semana que lo contiene. */
+    const selectDay = React.useCallback(
+        (iso: string) => {
+            const target = getISOWeek(parseISO(iso))
+            updateParams({
+                year: String(target.year),
+                week: String(target.week),
+                day: iso,
+            })
+        },
+        [updateParams],
+    )
+
+    const setSearch = React.useCallback(
+        (value: string) => updateParams({ term: value.trim() || null }),
+        [updateParams],
+    )
+
+    /** Quita semana, día y búsqueda: vuelve a hoy / la semana actual. */
+    const clearFilters = React.useCallback(
+        () =>
+            updateParams(
+                Object.fromEntries(AGENDA_PARAMS.map((key) => [key, null])),
+            ),
+        [updateParams],
+    )
+
+    // Se navega sobre el lunes real y se recalcula la semana ISO, para que los
+    // cambios de año (semana 52/53 -> 1) caigan donde deben.
+    const shiftWeek = (delta: number) => {
+        const monday = startOfISOWeek(year, week)
+        const target = getISOWeek(
+            new Date(
+                monday.getFullYear(),
+                monday.getMonth(),
+                monday.getDate() + delta * 7,
+            ),
+        )
+        setWeek(target.year, target.week)
+    }
+
+    const resetWeek = () => setWeek(current.year, current.week)
 
     const {
         isAsistente,
@@ -101,6 +203,15 @@ export function useAgenda() {
         }))
     }, [appointments, weekDates])
 
+    /**
+     * Día que se muestra en la vista de teléfono: el de `?day=` si cae en la
+     * semana visible; si no, hoy o, en su defecto, el primer día de atención.
+     */
+    const selectedDay: AgendaDay | undefined =
+        weekDays.find((d) => d.date === day) ??
+        weekDays.find((d) => d.isToday) ??
+        weekDays[0]
+
     /** Días de la semana que ya tienen alguna cita. */
     const markedDates = React.useMemo(
         () => [...new Set(appointments.map((a) => a.date))],
@@ -118,14 +229,14 @@ export function useAgenda() {
     }, [appointments, weekDays])
 
     const invalidate = React.useCallback(
-        (patientId?: number) => {
-            queryClient.invalidateQueries({ queryKey: queryKeys.appointments.all })
-            if (patientId != null) {
-                queryClient.invalidateQueries({
-                    queryKey: queryKeys.patients.detail(patientId),
-                })
-            }
-        },
+        (patientId?: number) =>
+            Promise.all([
+                queryClient.invalidateQueries({ queryKey: queryKeys.appointments.all }),
+                patientId != null &&
+                    queryClient.invalidateQueries({
+                        queryKey: queryKeys.patients.detail(patientId),
+                    }),
+            ]),
         [queryClient],
     )
 
@@ -137,18 +248,25 @@ export function useAgenda() {
                 destino === undefined ? medicoEmail : destino,
             )
         },
-        onSuccess: (appt) => invalidate(appt.patientId),
+        onSuccess: (appt) => {
+            invalidate(appt.patientId)
+        },
     })
 
     const updateMutation = useMutation({
         mutationFn: ({ id, input }: { id: string; input: Partial<AppointmentInput> }) =>
             citasActions.updateAppointment(id, input),
+        // Se espera al refetch: así la mutación no termina antes de que la
+        // agenda tenga el dato nuevo y el selector de estatus no "regresa" un
+        // instante al valor anterior.
         onSuccess: (appt) => invalidate(appt.patientId),
     })
 
     const deleteMutation = useMutation({
         mutationFn: (id: string) => citasActions.deleteAppointment(id),
-        onSuccess: () => invalidate(),
+        onSuccess: () => {
+            invalidate()
+        },
     })
 
     return {
@@ -161,6 +279,12 @@ export function useAgenda() {
         week,
         search,
         setSearch,
+        isCurrentWeek,
+        /** Día que pide la URL (`?day=`), aunque no caiga en la semana visible. */
+        dayParam: day,
+        selectedDay,
+        selectDay,
+        clearFilters,
 
         /** Solo un asistente elige médico; un médico ve siempre su agenda. */
         isAsistente,
@@ -173,11 +297,6 @@ export function useAgenda() {
         goToPreviousWeek: () => shiftWeek(-1),
         goToNextWeek: () => shiftWeek(1),
         goToCurrentWeek: resetWeek,
-        /** Salta a la semana que contiene la fecha indicada. */
-        goToDate: (iso: string) => {
-            const { year: y, week: w } = getISOWeek(parseISO(iso))
-            setWeek(y, w)
-        },
 
         // Sin médico elegido la query está deshabilitada: el spinner solo tiene
         // sentido mientras se carga la lista de médicos.
@@ -193,6 +312,7 @@ export function useAgenda() {
 
         updateAppointment: updateMutation.mutateAsync,
         isUpdating: updateMutation.isPending,
+        updateError: updateMutation.error,
 
         deleteAppointment: deleteMutation.mutateAsync,
         isDeleting: deleteMutation.isPending,

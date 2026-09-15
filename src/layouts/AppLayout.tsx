@@ -2,19 +2,33 @@
 
 import * as React from "react"
 import { NavLink, Outlet, useNavigate } from "react-router"
-import { CalendarDays, LogOut, UserCog, Users } from "lucide-react"
+import { CalendarDays, LayoutDashboard, LogOut, UserCog, Users } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/hooks/useAuth"
 import { cn } from "@/lib/utils"
+import type { Usuario } from "@/types/clinic"
 
 const NAV = [
   { to: "/agenda", label: "Agenda", icon: CalendarDays },
-  // { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  // Dashboard y panel de staff solo existen para el rol `medico` (ver `requireMedico`).
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, medicoOnly: true },
   { to: "/pacientes", label: "Pacientes", icon: Users },
-  // El panel de staff solo existe para el rol `medico` (ver `requireMedico`).
-  { to: "/usuarios", label: "Usuarios", icon: UserCog, medicoOnly: true },
+  { to: "/usuarios", label: "Asistentes", icon: UserCog, medicoOnly: true },
 ] as const
+
+const TITULO_POR_GENERO = {
+  femenino: "Cirujana Dental",
+  masculino: "Cirujano Dental",
+} as const
+
+// El género solo sirve para elegir el título del médico; los asistentes y los
+// médicos sin género registrado muestran el tipo.
+function tituloUsuario(usuario: Usuario) {
+  return usuario.tipo === "medico" && usuario.genero
+    ? TITULO_POR_GENERO[usuario.genero]
+    : usuario.tipo
+}
 
 export function AppLayout() {
   const { usuario, isAuthenticated, isMedico, logout } = useAuth()
@@ -31,19 +45,17 @@ export function AppLayout() {
   return (
     <div className="flex min-h-screen w-full flex-col bg-background lg:flex-row">
       <aside className="flex flex-col gap-6 border-b border-border bg-sidebar px-4 py-5 lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:shrink-0 lg:border-r lg:border-b-0">
-        <div className="flex items-center gap-2.5">
-          <div className="flex size-9 items-center justify-center overflow-hidden rounded-lg bg-primary">
-            <img
-              src="/icon_local.png"
-              alt="DentalCare"
-              className="size-full object-cover"
-            />
-          </div>
+        <div className="flex flex-col items-center gap-2 text-center">
+          <img
+            src="/icon_local.png"
+            alt="Odontologia Familiar"
+            className="size-16 object-contain lg:size-24"
+          />
           <div className="leading-tight">
-            <p className="text-sm font-semibold text-foreground">
-              Odontologia familiar
+            <p className="text-base font-semibold text-foreground">
+              Odontologia Familiar GC
             </p>
-            <p className="text-xs text-muted-foreground">Consultorio dental</p>
+            <p className="text-sm text-muted-foreground">Consultorio Dental</p>
           </div>
         </div>
 
@@ -72,7 +84,9 @@ export function AppLayout() {
             <p className="truncate font-medium text-foreground">
               {usuario?.nombre ?? "Sesión activa"}
             </p>
-            <p className="capitalize">{usuario?.tipo ?? ""}</p>
+            <p className="capitalize">
+              {usuario ? tituloUsuario(usuario) : ""}
+            </p>
           </div>
           <Button variant="outline" size="sm" onClick={logout}>
             <LogOut data-icon="inline-start" />

@@ -52,7 +52,7 @@ export function LoginView() {
           </div>
           <div className="leading-tight">
             <p className="font-semibold text-foreground">
-              Odontologia familiar
+              Odontologia familiar GC
             </p>
             <p className="text-xs text-muted-foreground">Consultorio dental</p>
           </div>

@@ -64,7 +64,9 @@ export function usePatients() {
   const createMutation = useMutation({
     // Sin `correo_medico` el paciente queda huérfano y `GET /pacientes`
     // (que filtra por el médico del token) no lo devolvería.
-    mutationFn: (input: PatientInput & { medicoEmail?: string | null }) =>
+    mutationFn: (
+      input: PatientInput & { birthDate: string; medicoEmail?: string | null },
+    ) =>
       pacientesActions.createPatient({
         medicoEmail: correoMedico,
         ...input,

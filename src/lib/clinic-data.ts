@@ -97,6 +97,46 @@ export function todayISO(): string {
   return toISODateString(new Date())
 }
 
+/**
+ * Años cumplidos a partir de una fecha `yyyy-mm-dd`. Compara los componentes
+ * como números (sin `new Date(iso)`, que se interpreta como UTC y en México
+ * cae un día antes). Un nacido el 29 de febrero cumple el 1 de marzo en años
+ * no bisiestos.
+ */
+export function calculateAge(birthISO: string, today: string = todayISO()): number {
+  const [by, bm, bd] = birthISO.split("-").map(Number)
+  const [ty, tm, td] = today.split("-").map(Number)
+  const hadBirthday = tm > bm || (tm === bm && td >= bd)
+  return Math.max(0, ty - by - (hadBirthday ? 0 : 1))
+}
+
+/**
+ * Valida la fecha de nacimiento de los formularios de paciente. Devuelve el
+ * mensaje de error o `null` si es válida. Vacía solo es error si `required`.
+ */
+export function validateBirthDate(
+  value: string,
+  today: string = todayISO(),
+  required = false,
+): string | null {
+  if (!value) {
+    return required ? "Indica la fecha de nacimiento del paciente." : null
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || toISODateString(parseISO(value)) !== value) {
+    return "La fecha de nacimiento no es válida."
+  }
+  // Las cadenas `yyyy-mm-dd` se ordenan igual que las fechas.
+  if (value > today) return "La fecha de nacimiento no puede ser futura."
+  return null
+}
+
+/** "34 años", "1 año" o "Sin registrar" si no hay fecha de nacimiento. */
+export function formatAge(birthISO: string | null, today?: string): string {
+  if (!birthISO) return "Sin registrar"
+  const age = calculateAge(birthISO, today)
+  return `${age} ${age === 1 ? "año" : "años"}`
+}
+
 export function formatDayName(iso: string): string {
   const date = parseISO(iso)
   const day = date.toLocaleDateString("es-MX", { weekday: "long" })
@@ -229,6 +269,21 @@ export function nextOpenDay(iso: string): string {
   for (let i = 0; i < 7; i++) {
     const candidate = toISODateString(
       new Date(date.getFullYear(), date.getMonth(), date.getDate() + i),
+    )
+    if (!isClosedDay(candidate)) return candidate
+  }
+  return iso
+}
+
+/**
+ * Día de atención anterior (`delta = -1`) o siguiente (`delta = 1`) a `iso`,
+ * sin incluirlo. Puede caer en otra semana.
+ */
+export function shiftOpenDay(iso: string, delta: 1 | -1): string {
+  const date = parseISO(iso)
+  for (let i = 1; i <= 7; i++) {
+    const candidate = toISODateString(
+      new Date(date.getFullYear(), date.getMonth(), date.getDate() + i * delta),
     )
     if (!isClosedDay(candidate)) return candidate
   }

@@ -28,5 +28,7 @@
       ]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Los tests corren con `bun test`, que trae sus propios tipos (`bun:test`).
+  "exclude": ["src/**/*.test.ts"]
 }

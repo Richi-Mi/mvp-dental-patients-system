@@ -17,19 +17,23 @@ import { cn } from "@/lib/utils"
 
 type Segment = "hours" | "minutes"
 
-const MAX_VALUE: Record<Segment, number> = { hours: 23, minutes: 59 }
+// El consultorio solo atiende de 10 a 20 h: el segmento de horas no admite
+// nada fuera de ese rango.
+const MIN_VALUE: Record<Segment, number> = { hours: 10, minutes: 0 }
+const MAX_VALUE: Record<Segment, number> = { hours: 20, minutes: 59 }
 
 /** Deja el valor en dos dígitos dentro del rango del segmento. */
 function clampSegment(value: string, segment: Segment, loop = false): string {
+  const min = MIN_VALUE[segment]
   const max = MAX_VALUE[segment]
   let numeric = Number.parseInt(value, 10)
-  if (Number.isNaN(numeric)) return "00"
+  if (Number.isNaN(numeric)) return String(min).padStart(2, "0")
 
   if (loop) {
-    if (numeric > max) numeric = 0
-    if (numeric < 0) numeric = max
+    if (numeric > max) numeric = min
+    if (numeric < min) numeric = max
   } else {
-    numeric = Math.min(Math.max(numeric, 0), max)
+    numeric = Math.min(Math.max(numeric, min), max)
   }
   return String(numeric).padStart(2, "0")
 }
@@ -52,6 +56,10 @@ type TimeSegmentProps = {
   onRightFocus?: () => void
   ref?: React.Ref<HTMLInputElement>
   disabled?: boolean
+  /** Cuánto suben/bajan las flechas (p. ej. minutos de 10 en 10). */
+  arrowStep?: number
+  /** En qué evento de teclado se aplica el paso de flechas. */
+  arrowStepEvent?: "keydown" | "keyup"
 }
 
 function TimeSegment({
@@ -64,6 +72,8 @@ function TimeSegment({
   onRightFocus,
   ref,
   disabled,
+  arrowStep = 1,
+  arrowStepEvent = "keydown",
 }: TimeSegmentProps) {
   // Marca que ya se escribió el primer dígito del par (p. ej. "0" -> "09").
   const [halfTyped, setHalfTyped] = React.useState(false)
@@ -100,7 +110,10 @@ function TimeSegment({
     }
 
     if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-      const step = event.key === "ArrowUp" ? 1 : -1
+      // El paso puede aplicarse al soltar la tecla en vez de al presionarla
+      // (p. ej. minutos, que avanzan de 10 en 10 con `keyup`).
+      if (arrowStepEvent === "keyup") return
+      const step = event.key === "ArrowUp" ? arrowStep : -arrowStep
       setHalfTyped(false)
       commit(clampSegment(String(Number(current) + step), segment, true))
       return
@@ -112,6 +125,15 @@ function TimeSegment({
       if (halfTyped) onRightFocus?.()
       setHalfTyped(!halfTyped)
     }
+  }
+
+  function handleKeyUp(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (arrowStepEvent !== "keyup") return
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return
+
+    const step = event.key === "ArrowUp" ? arrowStep : -arrowStep
+    setHalfTyped(false)
+    commit(clampSegment(String(Number(current) + step), segment, true))
   }
 
   return (
@@ -128,6 +150,7 @@ function TimeSegment({
       // controlado sin que el navegador escriba por su cuenta.
       onChange={(event) => event.preventDefault()}
       onKeyDown={handleKeyDown}
+      onKeyUp={handleKeyUp}
       onFocus={(event) => event.currentTarget.select()}
       className={cn(
         "h-9 w-12 rounded-lg border border-input bg-transparent text-center text-sm tabular-nums shadow-xs outline-none transition-colors",
@@ -180,6 +203,8 @@ export function TimePicker({
         onChange={onChange}
         onLeftFocus={() => hoursRef.current?.focus()}
         disabled={disabled}
+        arrowStep={10}
+        arrowStepEvent="keyup"
       />
       <Clock className="ml-1 size-4 shrink-0 text-muted-foreground" />
     </div>

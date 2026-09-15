@@ -99,6 +99,7 @@ export function toUsuario(dto: UsuarioDTO): Usuario {
     correo: dto.correo,
     nombre: dto.nombre,
     tipo: dto.tipo,
+    genero: dto.genero ?? null,
     activo: dto.activo,
   }
 }
@@ -142,7 +143,7 @@ export function toPatient(dto: PacienteDTO): Patient {
   return {
     id: dto.id,
     name: dto.nombre,
-    age: Number(dto.edad) || 0,
+    birthDate: dto.fecha_nacimiento ? toISODate(dto.fecha_nacimiento) || null : null,
     gender: dto.sexo ?? "",
     phone: dto.telefono ?? "",
     email: dto.correo ?? "",
@@ -157,8 +158,8 @@ export function toPatient(dto: PacienteDTO): Patient {
 
 export function toPacientePayload(
   input: Partial<PatientInput> & { medicoEmail?: string | null },
-): Record<string, string> {
-  const payload: Record<string, string> = {}
+): Record<string, string | null> {
+  const payload: Record<string, string | null> = {}
   const assign = (key: string, value: string | number | undefined | null) => {
     if (value === undefined || value === null) return
     payload[key] = String(value)
@@ -168,7 +169,11 @@ export function toPacientePayload(
   assign("sexo", input.gender)
   assign("cp", input.cp)
   assign("direccion", input.address)
-  assign("edad", input.age)
+  // A diferencia del resto, `null` sí se envía: le indica al backend que
+  // borre la fecha. `undefined` (campo omitido) la deja como estaba.
+  if (input.birthDate !== undefined) {
+    payload.fecha_nacimiento = input.birthDate || null
+  }
   assign("correo", input.email)
   assign("telefono", input.phone)
   assign("notas", input.notes)

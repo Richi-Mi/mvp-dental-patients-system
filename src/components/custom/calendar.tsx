@@ -39,8 +39,19 @@ export type CalendarProps = {
   onSelect?: (date: string) => void
   /** Días no seleccionables (por defecto, los días sin atención). */
   isDateDisabled?: (date: string) => boolean
+  /**
+   * `arrows` (por defecto): solo flechas de mes, como en la agenda.
+   * `dropdown`: añade selectores de mes y año para saltar lejos (p. ej.
+   * fechas de nacimiento), limitados a `fromYear`–`toYear`.
+   */
+  captionLayout?: "arrows" | "dropdown"
+  fromYear?: number
+  toYear?: number
   className?: string
 }
+
+const captionSelect =
+  "h-8 cursor-pointer rounded-md border border-input bg-transparent px-1.5 text-sm font-medium text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
 
 /**
  * Calendario mensual. El mes visible es estado interno y arranca en el de
@@ -50,6 +61,9 @@ export function Calendar({
   value,
   onSelect,
   isDateDisabled = isClosedDay,
+  captionLayout = "arrows",
+  fromYear = 1900,
+  toYear = new Date().getFullYear(),
   className,
 }: CalendarProps) {
   const [view, setView] = React.useState(() => {
@@ -61,12 +75,25 @@ export function Calendar({
   const currentMonth = monthKey(view.year, view.month)
   const today = todayISO()
 
+  const dropdown = captionLayout === "dropdown"
+  // Con selectores, las flechas no deben salirse del rango de años.
+  const atStart = dropdown && view.year <= fromYear && view.month === 1
+  const atEnd = dropdown && view.year >= toYear && view.month === 12
+
   function shiftMonth(delta: number) {
     setView((prev) => {
       const date = new Date(prev.year, prev.month - 1 + delta, 1)
       return { year: date.getFullYear(), month: date.getMonth() + 1 }
     })
   }
+
+  const years = React.useMemo(
+    () =>
+      dropdown
+        ? Array.from({ length: toYear - fromYear + 1 }, (_, i) => toYear - i)
+        : [],
+    [dropdown, fromYear, toYear],
+  )
 
   return (
     <div className={cn("w-72 select-none", className)}>
@@ -76,18 +103,57 @@ export function Calendar({
           variant="ghost"
           size="icon-sm"
           onClick={() => shiftMonth(-1)}
+          disabled={atStart}
           aria-label="Mes anterior"
         >
           <ChevronLeft />
         </Button>
-        <span className="text-sm font-medium text-foreground">
-          {MONTHS_LONG[view.month - 1]} {view.year}
-        </span>
+        {dropdown ? (
+          <div className="flex items-center gap-1.5">
+            <select
+              aria-label="Mes"
+              className={captionSelect}
+              value={view.month}
+              onChange={(e) =>
+                setView((prev) => ({ ...prev, month: Number(e.target.value) }))
+              }
+            >
+              {MONTHS_LONG.map((name, i) => (
+                <option key={name} value={i + 1}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Año"
+              className={captionSelect}
+              value={view.year}
+              onChange={(e) =>
+                setView((prev) => ({ ...prev, year: Number(e.target.value) }))
+              }
+            >
+              {/* El año visible puede quedar fuera del rango (p. ej. un valor viejo). */}
+              {!years.includes(view.year) && (
+                <option value={view.year}>{view.year}</option>
+              )}
+              {years.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <span className="text-sm font-medium text-foreground">
+            {MONTHS_LONG[view.month - 1]} {view.year}
+          </span>
+        )}
         <Button
           type="button"
           variant="ghost"
           size="icon-sm"
           onClick={() => shiftMonth(1)}
+          disabled={atEnd}
           aria-label="Mes siguiente"
         >
           <ChevronRight />
@@ -149,6 +215,12 @@ export type DatePickerProps = {
   format?: "long" | "short"
   /** Se ejecuta antes de que el trigger abra el calendario. */
   onKeyDown?: React.KeyboardEventHandler<HTMLButtonElement>
+  /** Ver `CalendarProps`. */
+  captionLayout?: CalendarProps["captionLayout"]
+  fromYear?: number
+  toYear?: number
+  /** Muestra "Borrar fecha" en el popover; al usarlo, `onChange("")`. */
+  clearable?: boolean
   className?: string
   "aria-describedby"?: string
   "aria-invalid"?: boolean
@@ -163,6 +235,10 @@ export function DatePicker({
   placeholder = "Selecciona una fecha",
   format = "long",
   onKeyDown,
+  captionLayout,
+  fromYear,
+  toYear,
+  clearable = false,
   className,
   ...aria
 }: DatePickerProps) {
@@ -207,11 +283,29 @@ export function DatePicker({
             <Calendar
               value={value}
               isDateDisabled={isDateDisabled}
+              captionLayout={captionLayout}
+              fromYear={fromYear}
+              toYear={toYear}
               onSelect={(date) => {
                 onChange(date)
                 setOpen(false)
               }}
             />
+            {clearable && value && (
+              <div className="mt-2 flex justify-end border-t border-border/70 pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    onChange("")
+                    setOpen(false)
+                  }}
+                >
+                  Borrar fecha
+                </Button>
+              </div>
+            )}
           </PopoverPrimitive.Popup>
         </PopoverPrimitive.Positioner>
       </PopoverPrimitive.Portal>

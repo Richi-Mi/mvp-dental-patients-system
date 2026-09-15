@@ -19,6 +19,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { DatePicker } from "@/components/custom/calendar"
 import { TimePicker } from "@/components/custom/time-picker"
 import { useAgenda } from "@/hooks/useAgenda"
+import { useNewAppointmentDialog } from "@/hooks/useNewAppointmentDialog"
 import { usePatients } from "@/hooks/usePatients"
 import { STATUS_META, isClosedDay, weekdayName } from "@/lib/clinic-data"
 import { useUiStore } from "@/store/ui.store"
@@ -28,10 +29,9 @@ const fieldControl =
     "flex h-9 w-full cursor-pointer rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
 
 /** `?cita=nueva` abre el diálogo; `?paciente=<id>` preselecciona al paciente. */
-const NEW_APPOINTMENT_SEARCH = "cita=nueva"
-
 export function NewAppointmentDialog() {
     const [searchParams, setSearchParams] = useSearchParams()
+    const { open, setOpen } = useNewAppointmentDialog()
     const navigate = useNavigate()
     const location = useLocation()
 
@@ -51,9 +51,6 @@ export function NewAppointmentDialog() {
     const setDraft = useUiStore((s) => s.setAppointmentDraft)
     const resetDraft = useUiStore((s) => s.resetAppointmentDraft)
 
-    // El diálogo se controla por URL para poder volver a él después de crear
-    // un paciente en otra ruta.
-    const open = searchParams.get("cita") === "nueva"
     const patientFromUrl = searchParams.get("paciente")
 
     // Al volver de "Nuevo paciente" el id llega por la URL: se adopta una sola
@@ -71,21 +68,6 @@ export function NewAppointmentDialog() {
         )
     }, [patientFromUrl, setDraft, setSearchParams])
 
-    function setOpen(next: boolean) {
-        setSearchParams(
-            (prev) => {
-                const params = new URLSearchParams(prev)
-                if (next) params.set("cita", "nueva")
-                else {
-                    params.delete("cita")
-                    params.delete("paciente")
-                }
-                return params
-            },
-            { replace: true },
-        )
-    }
-
     const closedDay = isClosedDay(draft.date)
     // Un asistente agenda a nombre del médico elegido: sin médico no hay a
     // dónde mandar el POST.
@@ -96,8 +78,12 @@ export function NewAppointmentDialog() {
         (!isAsistente || Boolean(medicoEmail))
 
     function goToNewPatient() {
-        // Vuelve a este mismo diálogo; el borrador queda en el store.
-        const backTo = `${location.pathname}?${NEW_APPOINTMENT_SEARCH}`
+        // Vuelve a este mismo diálogo (y a la misma semana y búsqueda de la
+        // agenda); el borrador queda en el store.
+        const params = new URLSearchParams(searchParams)
+        params.set("cita", "nueva")
+        params.delete("paciente")
+        const backTo = `${location.pathname}?${params}`
         navigate(`/pacientes/nuevo?redirectTo=${encodeURIComponent(backTo)}`)
     }
 
@@ -119,7 +105,12 @@ export function NewAppointmentDialog() {
 
     return (
         <>
-            <Button size="sm" onClick={() => setOpen(true)}>
+            <Button
+                size="sm"
+                onClick={() => setOpen(true)}
+                title="Nueva cita (Shift + ↑)"
+                aria-keyshortcuts="Shift+ArrowUp"
+            >
                 <Plus data-icon="inline-start" />
                 Nueva Cita
             </Button>
@@ -246,7 +237,7 @@ export function NewAppointmentDialog() {
                             </Field>
 
                             <Field>
-                                <FieldLabel htmlFor="na-motivo">Motivo</FieldLabel>
+                                <FieldLabel htmlFor="na-motivo"> Tratamiento a realizar </FieldLabel>
                                 <Input
                                     id="na-motivo"
                                     placeholder="Ej. Limpieza dental"

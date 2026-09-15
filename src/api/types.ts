@@ -6,10 +6,17 @@
 
 export type TipoUsuario = "medico" | "asistente"
 
+export type GeneroUsuario = "femenino" | "masculino"
+
 export type UsuarioDTO = {
   correo: string
   nombre: string
   tipo: TipoUsuario
+  /**
+   * `null` en los usuarios creados antes de capturarlo. Opcional porque solo
+   * `PUT /auth` y `GET /user` lo garantizan.
+   */
+  genero?: GeneroUsuario | null
   activo: boolean
 }
 
@@ -31,7 +38,8 @@ export type PacienteDTO = {
   id: number
   cp: string | null
   direccion: string | null
-  edad: string | null
+  /** `YYYY-MM-DD`; `null` en los pacientes creados antes de capturarla. */
+  fecha_nacimiento: string | null
   correo: string | null
   telefono: string | null
   notas: string | null
@@ -90,14 +98,19 @@ export type CreatePacientePayload = {
   sexo: string
   cp: string
   direccion: string
-  edad: string
+  /** `YYYY-MM-DD`, obligatoria al crear. */
+  fecha_nacimiento: string
   correo: string
   telefono: string
   notas?: string
   correo_medico?: string
 }
 
-export type UpdatePacientePayload = Partial<CreatePacientePayload> & {
+export type UpdatePacientePayload = Partial<
+  Omit<CreatePacientePayload, "fecha_nacimiento">
+> & {
+  /** Omitida = no cambia; `null` = se borra. */
+  fecha_nacimiento?: string | null
   tratamientos?: TratamientoPayload[]
 }
 

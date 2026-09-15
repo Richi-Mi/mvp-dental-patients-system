@@ -73,7 +73,7 @@ Formas de salida más comunes (ya sin `password` y con relaciones aplanadas). Lo
   id: number,
   cp: string | null,
   direccion: string | null,
-  edad: string | null,
+  fecha_nacimiento: string | null, // "YYYY-MM-DD"; null en pacientes anteriores al cambio
   correo: string | null,
   telefono: string | null,
   notas: string | null,
@@ -330,7 +330,7 @@ Crea un paciente nuevo.
 | `sexo` | `string` | Sí | |
 | `cp` | `string` | Sí | |
 | `direccion` | `string` | Sí | |
-| `edad` | `string` | Sí | |
+| `fecha_nacimiento` | `string` (`YYYY-MM-DD`) | Sí | Si falta o no es una fecha válida, `400` con `{ message }`. |
 | `correo` | `string` | Sí | |
 | `telefono` | `string` | Sí | |
 | `notas` | `string` | No | |
@@ -350,7 +350,8 @@ Actualiza los datos de un paciente. Todos los campos son opcionales (actualizaci
 
 | Campo | Tipo | Requerido | Notas |
 |---|---|---|---|
-| `cp`, `direccion`, `edad`, `correo`, `telefono`, `notas`, `nombre`, `sexo` | `string` | No | |
+| `cp`, `direccion`, `correo`, `telefono`, `notas`, `nombre`, `sexo` | `string` | No | |
+| `fecha_nacimiento` | `string` (`YYYY-MM-DD`) \| `null` | No | Omitida: no cambia. `null`: se borra. |
 | `correo_medico` | `string` | No | Reasigna el médico del paciente. |
 | `tratamientos` | `Tratamiento[]` (ver abajo) | No | **Reemplaza por completo** la lista de tratamientos guardados (ver detalle). |
 

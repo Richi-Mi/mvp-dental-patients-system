@@ -16,6 +16,7 @@ Interfaz web para administrar un consultorio dental ("Odontología Familiar"): a
 | Componentes      | shadcn/ui, estilo `base-vega` sobre **Base UI** (`@base-ui/react`), íconos `lucide-react` |
 | Formularios      | React Hook Form                                                          |
 | Gráficas         | Recharts                                                                 |
+| Notificaciones   | Sonner (toasts) + `AlertDialog` de shadcn para confirmaciones            |
 | Gestor de paquetes | Bun (`bun.lock`)                                                       |
 
 ## Requisitos
@@ -46,7 +47,15 @@ bun run preview        # sirve el último build de dist/
 
 `tsc -b` es el **único** chequeo de tipos (no hay script `typecheck`) y la configuración de ESLint no usa información de tipos. Antes de integrar cambios, corre `lint` y después `build`.
 
-No hay suite de pruebas configurada.
+Las pruebas usan el runner integrado de Bun (`bun:test`), en archivos `src/**/*.test.ts`:
+
+```bash
+bun test                                     # todas
+bun test src/lib/patient-birthdate.test.ts   # un archivo
+bun test -t "calculateAge"                   # por nombre
+```
+
+Los `*.test.ts` están excluidos de `tsconfig.app.json`, así que `tsc -b` no los revisa.
 
 ## Despliegue
 
@@ -84,7 +93,7 @@ src/
 ├── pages/                # Una vista por ruta
 └── components/
     ├── ui/               # Generados por shadcn (no editar a mano)
-    └── custom/           # Componentes propios (diálogos, calendario, time-picker, tabla de tratamientos)
+    └── custom/           # Componentes propios (diálogos, confirm-dialog, calendario, time-picker, tabla de tratamientos)
 ```
 
 ## Arquitectura
@@ -109,7 +118,7 @@ pages / components  →  hooks (TanStack Query)  →  actions  →  api (Axios) 
 | `/login`            | `LoginView`                      | Redirige a `/agenda` si hay sesión |
 | `/`                 | → `/agenda`                      | `requireAuth`                     |
 | `/agenda`           | `AgendaView`                     | `requireAuth`                     |
-| `/dashboard`        | `DashboardView`                  | `requireAuth`                     |
+| `/dashboard`        | `DashboardView`                  | `requireAuth` + `requireMedico`   |
 | `/pacientes`        | `PatientsView` (lista + `<Outlet/>`) | `requireAuth`                 |
 | `/pacientes/:id`    | `PatientDetailView`              | `requireAuth`                     |
 | `/pacientes/nuevo`  | `PatientFormView` (página completa) | `requireAuth`                  |
@@ -121,7 +130,8 @@ La protección está en **loaders**, no en componentes. La sesión de Zustand se
 ### Autenticación y roles
 
 - `auth.store.ts` persiste `{ token, usuario }` bajo la clave `dentalcare.auth` de `localStorage`.
-- Dos roles: **`medico`** (administrador, ve `/usuarios`) y **`asistente`** (trabaja sobre la agenda y los pacientes de un médico que elige).
+- Dos roles: **`medico`** (administrador, ve `/usuarios` y `/dashboard`) y **`asistente`** (trabaja sobre la agenda y los pacientes de un médico que elige).
+- El dashboard es solo del médico: sus métricas (ventas, dinero por cobrar) no deben verlas los asistentes. Se oculta del menú (`medicoOnly` en `AppLayout`) y la ruta redirige a `/agenda` con `requireMedico`. El backend responde `GET /user/dashboard` a cualquier usuario autenticado, pero filtra por el correo del token, así que un asistente nunca recibe los datos del médico.
 - El token dura 1 día. Ante un 401 fuera de `/auth`, el interceptor de Axios limpia la sesión y `AppLayout` redirige a `/login`.
 
 ### Reglas de dominio
@@ -144,9 +154,15 @@ La interfaz y los formatos están en **español (es-MX)**. Usa los helpers de `c
 - `src/components/ui/` es código generado (`bunx shadcn add <componente>`). Para personalizarlo, copia el componente a `src/components/custom/`. ESLint desactiva `react-refresh/only-export-components` solo en esa carpeta porque shadcn exporta las variantes `cva` junto al componente.
 - Tailwind 4: los tokens del tema son variables CSS en `src/index.css` (`@theme inline`).
 - Capas superpuestas: los diálogos van en `z-50` y el popover del calendario en `z-60` para quedar por encima.
+- **Confirmaciones y toasts**: no uses `window.alert`/`window.confirm`. Para acciones destructivas usa `ConfirmDialog` (`components/custom/confirm-dialog.tsx`, sobre el `AlertDialog` de shadcn): recibe el `trigger`, los textos y un `onConfirm` que devuelve una promesa, y muestra el toast solo (éxito, error del servidor o "cancelado" al cerrar con Cancelar/Esc). Mientras corre la acción no se puede cerrar; si falla, sigue abierto para reintentar. Hoy se usa para dar de baja pacientes, eliminar asistentes y eliminar citas.
+- Los toasts son de **Sonner**: `<Toaster position="bottom-right" richColors />` se monta una vez en `ClinicApp.tsx`; en cualquier otro lugar basta `import { toast } from "sonner"`.
+- Al instalar componentes con `bunx shadcn add`, contesta **no** si pregunta por sobrescribir `button.tsx` (u otro ya existente). El registro de `alert-dialog` generó `import { cn } from "cn"` y agregó un paquete `cn` de npm: el import correcto es `@/lib/utils` y ese paquete no se usa.
 
 ## Documentación relacionada
 
 - `ENDPOINTS.md`: referencia completa del API (cuerpos, respuestas y errores).
 - `DASHBOARD.md`: contrato y cálculo de `GET /user/dashboard`.
 - `AGENTS.md`: guía para asistentes de código.
+
+
+femenino y masculino

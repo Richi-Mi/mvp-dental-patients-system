@@ -43,7 +43,8 @@ export const routes: RouteObject[] = [
     children: [
       { index: true, loader: () => redirect("/agenda") },
       { path: "agenda", Component: AgendaView },
-      { path: "dashboard", Component: DashboardView },
+      // Métricas del médico: un asistente no debe verlas.
+      { path: "dashboard", loader: requireMedico, Component: DashboardView },
       { path: "usuarios", loader: requireMedico, Component: UsersView },
       // `nuevo` va fuera del layout de lista: es un formulario de página
       // completa al que se llega desde el diálogo de nueva cita.
