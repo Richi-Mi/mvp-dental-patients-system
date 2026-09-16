@@ -1,8 +1,8 @@
 "use client"
 
-import { Link, NavLink, Outlet } from "react-router"
+import { Link, NavLink, Outlet, useParams } from "react-router"
 import { Tooltip } from "@base-ui/react/tooltip"
-import { ChevronRight, Loader2, Search, UserPlus } from "lucide-react"
+import { ArrowLeft, ChevronRight, Loader2, Search, UserPlus } from "lucide-react"
 
 import {
   InputGroup,
@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { usePatients } from "@/hooks/usePatients"
 import { formatAge, formatLongDate } from "@/lib/clinic-data"
+import { MOBILE_FAB } from "@/lib/responsive"
 import { cn } from "@/lib/utils"
 
 /** Edad del paciente; al pasar el cursor muestra la fecha de nacimiento. */
@@ -42,10 +43,18 @@ function PatientAge({ birthDate }: { birthDate: string | null }) {
 export function PatientsView() {
   const { filtered, patients, search, setSearch, isLoading, error } =
     usePatients()
+  // Por debajo de lg no caben lista y expediente lado a lado: con un paciente
+  // elegido solo se ve el expediente, con un botón para volver a la lista.
+  const hasSelection = useParams().id !== undefined
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div
+        className={cn(
+          "flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between",
+          hasSelection && "max-lg:hidden",
+        )}
+      >
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Pacientes
@@ -54,14 +63,19 @@ export function PatientsView() {
             Expedientes y control de tratamientos.
           </p>
         </div>
-        <Button size="sm" render={<Link to="/pacientes/nuevo" />}>
+        <Button
+          size="sm"
+          className={MOBILE_FAB}
+          nativeButton={false}
+          render={<Link to="/pacientes/nuevo" />}
+        >
           <UserPlus data-icon="inline-start" />
           Nuevo paciente
         </Button>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-        <div className="flex flex-col gap-3">
+        <div className={cn("flex flex-col gap-3", hasSelection && "max-lg:hidden")}>
           <InputGroup>
             <InputGroupAddon>
               <Search />
@@ -143,7 +157,21 @@ export function PatientsView() {
           )}
         </div>
 
-        <Outlet />
+        <div className="flex min-w-0 flex-col gap-2 lg:contents">
+          {hasSelection && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-ml-2 w-fit lg:hidden"
+              nativeButton={false}
+              render={<Link to="/pacientes" />}
+            >
+              <ArrowLeft data-icon="inline-start" />
+              Pacientes
+            </Button>
+          )}
+          <Outlet />
+        </div>
       </div>
     </div>
   )

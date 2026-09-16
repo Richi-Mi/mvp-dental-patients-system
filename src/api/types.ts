@@ -50,6 +50,16 @@ export type PacienteDTO = {
   medico?: UsuarioDTO | null
   tratamientos?: TratamientoDTO[]
   proximasCitas?: CitaDTO[]
+  /** Solo en `GET /pacientes/:id`; `null` si el paciente no tiene historial. */
+  historialClinico?: HistorialClinicoDTO | null
+}
+
+export type PreguntaHistorial = `pregunta_${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10}`
+
+export type HistorialClinicoDTO = {
+  id_paciente: number
+  /** Siempre trae las 10 preguntas; `null` = sin responder. */
+  historial: Record<PreguntaHistorial, string | null>
 }
 
 export type CitaDTO = {
@@ -112,6 +122,15 @@ export type UpdatePacientePayload = Partial<
   /** Omitida = no cambia; `null` = se borra. */
   fecha_nacimiento?: string | null
   tratamientos?: TratamientoPayload[]
+}
+
+/**
+ * `POST /historial` y `PUT /historial`. Pregunta omitida: queda sin responder
+ * al crear y no cambia al actualizar. `null` o `""`: sin responder.
+ */
+export type HistorialPayload = {
+  id_paciente: number
+  historial: Partial<Record<PreguntaHistorial, string | null>>
 }
 
 /** `GET /user/dashboard` — métricas anuales ya agregadas por el backend. */

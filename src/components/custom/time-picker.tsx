@@ -153,7 +153,7 @@ function TimeSegment({
       onKeyUp={handleKeyUp}
       onFocus={(event) => event.currentTarget.select()}
       className={cn(
-        "h-9 w-12 rounded-lg border border-input bg-transparent text-center text-sm tabular-nums shadow-xs outline-none transition-colors",
+        "h-9 w-12 rounded-lg border border-input bg-transparent text-center text-sm tabular-nums shadow-xs outline-none transition-colors max-lg:h-11 max-lg:w-14 max-sm:text-base",
         "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
         "disabled:pointer-events-none disabled:opacity-50",
       )}

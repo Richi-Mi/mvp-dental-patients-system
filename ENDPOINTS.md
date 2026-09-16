@@ -14,6 +14,7 @@ Backend de consultorio dental construido con [Elysia](https://elysiajs.com/) sob
 - [`/user`](#user)
 - [`/pacientes`](#pacientes)
 - [`/citas`](#citas)
+- [`/historial`](#historial)
 - [Ruta no encontrada](#ruta-no-encontrada)
 
 ---
@@ -46,7 +47,7 @@ Todas las rutas comparten el mismo formato de error: `{ "message": string }`.
 | `401` | Token ausente, inválido o expirado; o credenciales de login incorrectas. |
 | `403` | El usuario autenticado no tiene el rol requerido (`authRole("medico")`). |
 | `404` | El recurso solicitado no existe (paciente, usuario, cita, médico referenciado, etc.), o la ruta no coincide con ninguna definida. |
-| `409` | Conflicto: correo ya registrado, o cita duplicada para el mismo médico/horario. |
+| `409` | Conflicto: correo ya registrado, cita duplicada para el mismo médico/horario, o paciente que ya tiene historial clínico. |
 | `422` | El `body`/`headers`/`query` no cumple el esquema (`t.Object(...)`) declarado por la ruta — validación nativa de Elysia/TypeBox, ocurre **antes** de llegar al controlador. |
 | `500` | Error no controlado. |
 
@@ -83,9 +84,12 @@ Formas de salida más comunes (ya sin `password` y con relaciones aplanadas). Lo
   correo_medico: string | null,
   medico?: Usuario | null,          // solo si la ruta carga la relación
   tratamientos?: Tratamiento[],     // solo en GET /pacientes/:id y tras PUT con `tratamientos`
-  proximasCitas?: Cita[]            // solo en GET /pacientes/:id
+  proximasCitas?: Cita[],           // solo en GET /pacientes/:id
+  historialClinico?: HistorialClinico | null // solo en GET /pacientes/:id; null si no tiene
 }
 ```
+
+> `cp`, `direccion`, `correo` y `telefono` se guardan en una tabla aparte (`paciente_contact`, relación 1 -> 1), pero el API los sigue exponiendo **planos** en el paciente, también cuando el paciente viene dentro de una `Cita`. Valen `null` si no se capturaron: los strings vacíos (o solo espacios) se guardan como `null`, y si los cuatro quedan en `null` no existe registro de contacto.
 
 **Tratamiento**
 ```ts
@@ -112,6 +116,20 @@ Formas de salida más comunes (ya sin `password` y con relaciones aplanadas). Lo
   paciente?: Paciente
 }
 ```
+
+**HistorialClinico**
+```ts
+{
+  id_paciente: number,   // PK y FK a Paciente: un solo historial por paciente
+  historial: {           // siempre trae las 10 preguntas
+    pregunta_1: string | null,   // null = sin responder
+    // ...
+    pregunta_10: string | null
+  }
+}
+```
+
+> Los textos de las preguntas viven en el frontend (`CLINICAL_HISTORY_QUESTIONS` en `src/lib/clinic-data.ts`); el backend solo guarda las respuestas. La pregunta 10 (embarazo) solo se muestra a pacientes de sexo femenino, pero el backend no lo valida.
 
 ---
 
@@ -310,10 +328,12 @@ Obtiene un paciente activo, su lista de tratamientos y sus próximas citas.
   "...": "...resto de campos de Paciente...",
   "medico": { "correo": "medico@gmail.com", "...": "..." },
   "tratamientos": [ { "id": "1-2026-09-10", "nombre": "Limpieza", "costo": 500, "cuenta": 0, "fecha": "2026-09-10", "id_paciente": 1 } ],
-  "proximasCitas": [ { "id": "medico@gmail.com_2026-09-15T15:00:00.000Z", "fecha_cita": "2026-09-15T15:00:00.000Z", "motivo": "Revisión", "estatus": "pendiente" } ]
+  "proximasCitas": [ { "id": "medico@gmail.com_2026-09-15T15:00:00.000Z", "fecha_cita": "2026-09-15T15:00:00.000Z", "motivo": "Revisión", "estatus": "pendiente" } ],
+  "historialClinico": { "id_paciente": 1, "historial": { "pregunta_1": "No", "pregunta_2": null, "...": "...", "pregunta_10": null } }
 }
 ```
 - `proximasCitas` son las citas del paciente (de cualquier médico) con `fecha_cita >= ahora`, ordenadas ascendentemente.
+- `historialClinico` siempre viene: es `null` si el paciente todavía no tiene historial clínico. Es la única forma de consultarlo (no hay `GET /historial`).
 - **Errores:** `404` si el paciente no existe o está inactivo (`isActive: false`).
 
 ### `POST /pacientes`
@@ -328,13 +348,15 @@ Crea un paciente nuevo.
 |---|---|---|---|
 | `nombre` | `string` | Sí | |
 | `sexo` | `string` | Sí | |
-| `cp` | `string` | Sí | |
-| `direccion` | `string` | Sí | |
+| `cp` | `string \| null` | No | Dato de contacto (ver nota abajo). |
+| `direccion` | `string \| null` | No | Dato de contacto. |
 | `fecha_nacimiento` | `string` (`YYYY-MM-DD`) | Sí | Si falta o no es una fecha válida, `400` con `{ message }`. |
-| `correo` | `string` | Sí | |
-| `telefono` | `string` | Sí | |
+| `correo` | `string \| null` | No | Dato de contacto. |
+| `telefono` | `string \| null` | No | Dato de contacto. |
 | `notas` | `string` | No | |
 | `correo_medico` | `string` | No | Correo de un `Usuario` existente; si se envía y no existe, `404`. Si se omite, el paciente queda sin médico asignado. |
+
+> **Datos de contacto:** omitir un campo, mandarlo en `null` o como `""` (o solo espacios) es equivalente: se guarda como `null`, y los strings se guardan sin espacios al inicio ni al final. Si los cuatro quedan en `null`, el paciente se crea **sin** registro de contacto. Un valor que no sea `string` ni `null` responde `400`.
 
 - **Respuesta `201`:** objeto `Paciente` creado.
 - **Errores:** `404` si `correo_medico` no corresponde a ningún usuario; `422` si faltan campos requeridos.
@@ -350,7 +372,8 @@ Actualiza los datos de un paciente. Todos los campos son opcionales (actualizaci
 
 | Campo | Tipo | Requerido | Notas |
 |---|---|---|---|
-| `cp`, `direccion`, `correo`, `telefono`, `notas`, `nombre`, `sexo` | `string` | No | |
+| `notas`, `nombre`, `sexo` | `string` | No | |
+| `cp`, `direccion`, `correo`, `telefono` | `string \| null` | No | Omitido: no cambia. `null` o `""`: se borra ese dato. Si tras aplicar los cambios los cuatro quedan en `null`, se elimina el registro de contacto; si el paciente no tenía y se manda algún valor, se crea. |
 | `fecha_nacimiento` | `string` (`YYYY-MM-DD`) \| `null` | No | Omitida: no cambia. `null`: se borra. |
 | `correo_medico` | `string` | No | Reasigna el médico del paciente. |
 | `tratamientos` | `Tratamiento[]` (ver abajo) | No | **Reemplaza por completo** la lista de tratamientos guardados (ver detalle). |
@@ -498,6 +521,55 @@ Elimina una cita **físicamente** de la base de datos (no es baja lógica).
 { "message": "Cita eliminada" }
 ```
 - **Errores:** `404` si la cita no existe o no pertenece al médico autenticado.
+
+---
+
+## `/historial`
+
+Historial clínico del paciente: un cuestionario de 10 preguntas con respuesta de texto libre. Cada paciente tiene **como máximo uno** (relación 1 -> 1). Todas las rutas requieren header `token` y sirven para cualquier rol. Para consultarlo se usa `GET /pacientes/:id` (`historialClinico`). No se puede borrar por separado: se elimina con el paciente cuando su registro se borra de la base.
+
+### `POST /historial`
+
+Crea el historial clínico de un paciente.
+
+- **Auth:** sí.
+- **Headers:** `token: <jwt>`.
+- **Body:**
+
+| Campo | Tipo | Requerido | Notas |
+|---|---|---|---|
+| `id_paciente` | `number` | Sí | Paciente activo. |
+| `historial` | `object` | Sí | Respuestas `pregunta_1` … `pregunta_10`, cada una `string \| null` y opcional. Puede ir vacío (`{}`). |
+
+> **Respuestas:** una pregunta omitida, en `null` o como `""` (o solo espacios) queda sin responder (`null`); los textos se guardan sin espacios al inicio ni al final. Las claves que no son del cuestionario se ignoran. Un valor que no sea `string` ni `null` responde `400`.
+
+```json
+{ "id_paciente": 1, "historial": { "pregunta_1": "No", "pregunta_3": "Penicilina" } }
+```
+
+- **Respuesta `201`:** objeto `HistorialClinico` con las 10 preguntas.
+- **Errores:** `404` si el paciente no existe o está inactivo; `409` si el paciente ya tiene historial clínico.
+
+### `PUT /historial`
+
+Actualiza el historial clínico de un paciente. Actualización parcial por pregunta.
+
+- **Auth:** sí.
+- **Headers:** `token: <jwt>`.
+- **Body:** mismos campos que `POST /historial`.
+
+| En `historial` | Efecto |
+|---|---|
+| Pregunta omitida | No cambia. |
+| `null`, `""` o solo espacios | Se borra la respuesta (queda `null`). |
+| Texto | Reemplaza la respuesta. |
+
+```json
+{ "id_paciente": 1, "historial": { "pregunta_1": "Sí, diabetes", "pregunta_3": null } }
+```
+
+- **Respuesta `200`:** objeto `HistorialClinico` actualizado, con las 10 preguntas.
+- **Errores:** `404` si el paciente no tiene historial clínico.
 
 ---
 

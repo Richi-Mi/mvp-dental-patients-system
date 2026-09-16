@@ -1,7 +1,9 @@
-import { toISODateString } from "@/lib/clinic-data"
+import { CLINICAL_HISTORY_QUESTIONS, toISODateString } from "@/lib/clinic-data"
 import type {
   CitaDTO,
   DashboardDTO,
+  HistorialClinicoDTO,
+  HistorialPayload,
   PacienteDTO,
   TratamientoDTO,
   TratamientoPayload,
@@ -10,6 +12,7 @@ import type {
 import type {
   Appointment,
   AppointmentStatus,
+  ClinicalHistory,
   DashboardMetrics,
   Patient,
   PatientInput,
@@ -139,6 +142,31 @@ export function toAppointment(dto: CitaDTO): Appointment {
   }
 }
 
+export function toClinicalHistory(dto: HistorialClinicoDTO): ClinicalHistory {
+  const answers = {} as ClinicalHistory
+  for (const { key } of CLINICAL_HISTORY_QUESTIONS) {
+    answers[key] = dto.historial?.[key] ?? ""
+  }
+  return answers
+}
+
+/**
+ * Solo se envían las preguntas presentes en `answers`: al actualizar, una
+ * omitida conserva su respuesta (así la de embarazo, que se oculta si el
+ * paciente no es de sexo femenino, no se borra). En blanco se envía `null`.
+ */
+export function toHistorialPayload(
+  patientId: number,
+  answers: Partial<ClinicalHistory>,
+): HistorialPayload {
+  const historial: HistorialPayload["historial"] = {}
+  for (const { key } of CLINICAL_HISTORY_QUESTIONS) {
+    const value = answers[key]
+    if (value !== undefined) historial[key] = value.trim() || null
+  }
+  return { id_paciente: patientId, historial }
+}
+
 export function toPatient(dto: PacienteDTO): Patient {
   return {
     id: dto.id,
@@ -153,6 +181,9 @@ export function toPatient(dto: PacienteDTO): Patient {
     medicoEmail: dto.correo_medico,
     treatments: (dto.tratamientos ?? []).map(toTreatment),
     upcoming: (dto.proximasCitas ?? []).map(toAppointment),
+    clinicalHistory: dto.historialClinico
+      ? toClinicalHistory(dto.historialClinico)
+      : null,
   }
 }
 

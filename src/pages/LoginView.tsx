@@ -15,6 +15,8 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/hooks/useAuth"
+import { MOBILE_CARD } from "@/lib/responsive"
+import { cn } from "@/lib/utils"
 
 function errorMessage(error: unknown): string | null {
   if (!error) return null
@@ -58,7 +60,7 @@ export function LoginView() {
           </div>
         </div>
 
-        <Card className="border-border/70">
+        <Card className={cn("border-border/70", MOBILE_CARD)}>
           <CardHeader>
             <CardTitle className="text-lg">Bienvenido</CardTitle>
             <CardDescription>

@@ -51,7 +51,7 @@ export type CalendarProps = {
 }
 
 const captionSelect =
-  "h-8 cursor-pointer rounded-md border border-input bg-transparent px-1.5 text-sm font-medium text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+  "h-8 cursor-pointer rounded-md border border-input bg-transparent px-1.5 text-sm font-medium text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 max-sm:text-base"
 
 /**
  * Calendario mensual. El mes visible es estado interno y arranca en el de
@@ -96,7 +96,7 @@ export function Calendar({
   )
 
   return (
-    <div className={cn("w-72 select-none", className)}>
+    <div className={cn("w-72 select-none max-lg:w-77", className)}>
       <div className="flex items-center justify-between gap-2 px-1 pb-2">
         <Button
           type="button"
@@ -185,7 +185,7 @@ export function Calendar({
               aria-pressed={selected}
               onClick={() => onSelect?.(date)}
               className={cn(
-                "flex h-9 items-center justify-center rounded-md text-sm transition-colors",
+                "flex h-9 items-center justify-center rounded-md text-sm transition-colors max-lg:h-11 max-sm:text-base",
                 "hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
                 outside ? "text-muted-foreground/50" : "text-foreground",
                 isToday && !selected && "font-semibold text-primary",
@@ -254,7 +254,7 @@ export function DatePicker({
             onKeyDown={onKeyDown}
             {...aria}
             className={cn(
-              "flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg border border-input bg-transparent px-3 text-left text-sm shadow-xs transition-colors outline-none",
+              "flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg border border-input bg-transparent px-3 text-left text-sm shadow-xs transition-colors outline-none max-lg:h-11 max-sm:text-base",
               "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
               "aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20",
               className,

@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogClose,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -16,11 +15,12 @@ import {
 } from "@/components/ui/dialog"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { ResponsiveDialogContent } from "@/components/custom/responsive-dialog"
 import { useUsers } from "@/hooks/useUsers"
 import type { Usuario } from "@/types/clinic"
 
 const fieldControl =
-  "flex h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+  "flex h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 max-sm:text-base"
 
 export function EditAssistantDialog({ usuario }: { usuario: Usuario }) {
   const { updateUser, isUpdating } = useUsers()
@@ -66,7 +66,7 @@ export function EditAssistantDialog({ usuario }: { usuario: Usuario }) {
           </Button>
         }
       />
-      <DialogContent className="sm:max-w-md">
+      <ResponsiveDialogContent className="sm:max-w-md">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>Editar asistente</DialogTitle>
@@ -126,7 +126,7 @@ export function EditAssistantDialog({ usuario }: { usuario: Usuario }) {
             </Button>
           </DialogFooter>
         </form>
-      </DialogContent>
+      </ResponsiveDialogContent>
     </Dialog>
   )
 }

@@ -1,4 +1,9 @@
-import type { Appointment, AppointmentStatus, Treatment } from "@/types/clinic"
+import type {
+  Appointment,
+  AppointmentStatus,
+  ClinicalQuestionKey,
+  Treatment,
+} from "@/types/clinic"
 
 export const STATUS_META: Record<
   AppointmentStatus,
@@ -369,6 +374,59 @@ export function treatmentsPaid(treatments: Treatment[]): number {
  */
 export function treatmentsBalance(treatments: Treatment[]): number {
   return treatmentsTotal(treatments) - treatmentsPaid(treatments)
+}
+
+// ---- Historial clínico ----
+
+export type ClinicalQuestion = {
+  key: ClinicalQuestionKey
+  label: string
+  /** Solo aplica a pacientes de sexo femenino. */
+  onlyFemale?: boolean
+}
+
+/** Cuestionario del historial clínico, en el orden en que se muestra. */
+export const CLINICAL_HISTORY_QUESTIONS: readonly ClinicalQuestion[] = [
+  {
+    key: "pregunta_1",
+    label: "¿Ha habido un cambio en su salud en los últimos 2 años?",
+  },
+  { key: "pregunta_2", label: "¿Se encuentra bajo tratamiento médico?" },
+  {
+    key: "pregunta_3",
+    label: "¿Es alérgico a algún medicamento, sustancia o alimento?",
+  },
+  {
+    key: "pregunta_4",
+    label: "¿Se ha sometido a una intervención quirúrgica de importancia?",
+  },
+  { key: "pregunta_5", label: "¿Le han efectuado transfusiones sanguíneas?" },
+  { key: "pregunta_6", label: "¿Está tomando alguna droga o medicina?" },
+  { key: "pregunta_7", label: "¿Padece o ha padecido hepatitis?" },
+  {
+    key: "pregunta_8",
+    label:
+      "¿Ha tenido hemorragias excesivas o anormales después de extracciones, cirugía o traumatismo?",
+  },
+  {
+    key: "pregunta_9",
+    label:
+      "¿Padece alguna enfermedad o trastorno no mencionado que crea importante dar a conocer?",
+  },
+  {
+    key: "pregunta_10",
+    label: "Mujeres: ¿Está usted embarazada?",
+    onlyFemale: true,
+  },
+]
+
+/**
+ * Preguntas que aplican al paciente: la de embarazo solo se muestra si su sexo
+ * es femenino (sin distinguir mayúsculas). El backend no lo valida.
+ */
+export function clinicalQuestionsFor(gender: string): ClinicalQuestion[] {
+  const isFemale = gender.trim().toLowerCase() === "femenino"
+  return CLINICAL_HISTORY_QUESTIONS.filter((q) => !q.onlyFemale || isFemale)
 }
 
 // ---- Aggregations ----

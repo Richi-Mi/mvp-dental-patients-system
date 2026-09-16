@@ -128,3 +128,47 @@
     @apply font-sans;
     }
 }
+/*
+ * Sistema responsive (breakpoints de Tailwind, ver CLAUDE.md):
+ * - teléfono    < sm  (640px)
+ * - tablet      sm–lg (640–1023px)
+ * - escritorio  ≥ lg  (1024px): layout con sidebar, sin cambios.
+ *
+ * Por debajo de lg la app se usa con el dedo: los controles generados por
+ * shadcn (que no se editan a mano) crecen hasta el área táctil mínima de 44px.
+ * Los `Button` se ubican por su clase `group/button` y no por `data-slot`,
+ * porque usados como `render` de un Trigger el `data-slot` es el del Trigger.
+ * Solo se tocan `min-*` dentro de `@layer base`, así que las alturas `h-*` de
+ * cada componente siguen mandando en escritorio.
+ */
+@layer base {
+  @media (width < 64rem) {
+    .group\/button,
+    [data-slot="input"],
+    [data-slot="input-group"],
+    [data-slot="input-group-control"],
+    [data-slot="select-trigger"][data-size="default"],
+    select {
+      min-height: 2.75rem;
+    }
+
+    /* Botones de icono (`size="icon*"`): cuadrados de 44px. */
+    .group\/button:is(.size-6, .size-7, .size-8, .size-9) {
+      min-width: 2.75rem;
+    }
+  }
+}
+
+/*
+ * Área táctil de 44px sin cambiar el tamaño visible, para controles que deben
+ * verse compactos (chips, iconos dentro de tarjetas). Úsala con `max-lg:`.
+ */
+@utility touch-hitbox {
+  position: relative;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: min(0px, calc(50% - 1.375rem));
+  }
+}

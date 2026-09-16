@@ -24,6 +24,12 @@ export type Appointment = {
   motivo: string
 }
 
+/** Clave con la que el backend guarda cada pregunta del historial clínico. */
+export type ClinicalQuestionKey = `pregunta_${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10}`
+
+/** Respuestas del historial clínico; `""` = pregunta sin responder. */
+export type ClinicalHistory = Record<ClinicalQuestionKey, string>
+
 export type Patient = {
   id: number
   name: string
@@ -40,6 +46,11 @@ export type Patient = {
   treatments: Treatment[]
   /** Only populated by `GET /pacientes/:id`. */
   upcoming: Appointment[]
+  /**
+   * Only populated by `GET /pacientes/:id`; `null` = el paciente no tiene
+   * historial clínico.
+   */
+  clinicalHistory: ClinicalHistory | null
 }
 
 export type PatientInput = {

@@ -17,6 +17,10 @@ export const ENDPOINTS = {
     root: "/pacientes",
     byId: (id: number) => `/pacientes/${id}`,
   },
+  /** `POST` crea y `PUT` actualiza; se consulta dentro de `GET /pacientes/:id`. */
+  historial: {
+    root: "/historial",
+  },
   citas: {
     root: "/citas",
     byId: (id: string) => `/citas/${encodeURIComponent(id)}`,

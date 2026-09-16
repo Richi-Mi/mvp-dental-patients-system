@@ -22,6 +22,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Separator } from "@/components/ui/separator"
+import { ClinicalHistoryDialog } from "@/components/custom/clinical-history-dialog"
 import { ConfirmDialog } from "@/components/custom/confirm-dialog"
 import { EditPatientDialog } from "@/components/custom/edit-patient-dialog"
 import { TreatmentsTable } from "@/components/custom/treatments-table"
@@ -32,10 +33,13 @@ import {
   formatDayName,
   formatLongDate,
 } from "@/lib/clinic-data"
+import { MOBILE_CARD } from "@/lib/responsive"
+import { cn } from "@/lib/utils"
 
 export function PatientsEmptyView() {
   return (
-    <Empty className="h-full rounded-xl border border-dashed">
+    // Sin la lista al lado (< lg) este aviso solo estorba debajo de ella.
+    <Empty className="h-full rounded-xl border border-dashed max-lg:hidden">
       <EmptyHeader>
         <EmptyTitle>Selecciona un paciente</EmptyTitle>
         <EmptyDescription>
@@ -90,23 +94,26 @@ export function PatientDetailView() {
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <Card className="border-border/70">
+      <Card className={cn("border-border/70", MOBILE_CARD)}>
         <CardHeader>
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex size-14 items-center justify-center rounded-full bg-primary text-xl font-semibold text-primary-foreground">
-              {patient.name.charAt(0).toUpperCase()}
+          <div className="grid items-center gap-4 sm:grid-cols-2">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="flex size-14 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-semibold text-primary-foreground">
+                {patient.name.charAt(0).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <CardTitle className="text-xl">{patient.name}</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  {patient.birthDate
+                    ? `${formatAge(patient.birthDate)} (${formatLongDate(patient.birthDate)})`
+                    : "Edad sin registrar"}
+                  {patient.gender ? ` · ${patient.gender}` : ""}
+                </p>
+              </div>
             </div>
-            <div>
-              <CardTitle className="text-xl">{patient.name}</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {patient.birthDate
-                  ? `${formatAge(patient.birthDate)} (${formatLongDate(patient.birthDate)})`
-                  : "Edad sin registrar"}
-                {patient.gender ? ` · ${patient.gender}` : ""}
-              </p>
-            </div>
-            <div className="ml-auto flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 max-sm:*:flex-1 sm:justify-end">
               <EditPatientDialog patient={patient} />
+              <ClinicalHistoryDialog patient={patient} />
               <ConfirmDialog
                 trigger={
                   <Button variant="outline" size="sm" disabled={isDeleting}>
@@ -194,7 +201,7 @@ function InfoRow({
       <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-sm text-foreground">{value || "—"}</p>
+        <p className="text-sm wrap-break-word text-foreground">{value || "—"}</p>
       </div>
     </div>
   )

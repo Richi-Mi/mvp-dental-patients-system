@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogClose,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -16,7 +15,9 @@ import {
 } from "@/components/ui/dialog"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { ResponsiveDialogContent } from "@/components/custom/responsive-dialog"
 import { useUsers } from "@/hooks/useUsers"
+import { MOBILE_FAB } from "@/lib/responsive"
 
 const EMPTY = { nombre: "", correo: "", password: "" }
 
@@ -63,13 +64,13 @@ export function NewAssistantDialog() {
     >
       <DialogTrigger
         render={
-          <Button size="sm">
+          <Button size="sm" className={MOBILE_FAB}>
             <UserPlus data-icon="inline-start" />
             Nuevo asistente
           </Button>
         }
       />
-      <DialogContent className="sm:max-w-md">
+      <ResponsiveDialogContent className="sm:max-w-md">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>Nuevo asistente</DialogTitle>
@@ -138,7 +139,7 @@ export function NewAssistantDialog() {
             </Button>
           </DialogFooter>
         </form>
-      </DialogContent>
+      </ResponsiveDialogContent>
     </Dialog>
   )
 }

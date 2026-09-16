@@ -36,7 +36,7 @@ import {
 import { ConfirmDialog } from "@/components/custom/confirm-dialog"
 import { NewAppointmentDialog } from "@/components/custom/new-appointment-dialog"
 import { useAgenda, type AgendaDay } from "@/hooks/useAgenda"
-import { useMediaQuery } from "@/hooks/useMediaQuery"
+import { useIsMobile } from "@/hooks/useMediaQuery"
 import { useNewAppointmentDialog } from "@/hooks/useNewAppointmentDialog"
 import {
   APPOINTMENT_STATUSES,
@@ -55,7 +55,7 @@ import { cn } from "@/lib/utils"
 import type { Appointment, AppointmentStatus, Usuario } from "@/types/clinic"
 
 const fieldControl =
-  "flex h-9 w-full cursor-pointer rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+  "flex h-9 w-full cursor-pointer rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 max-sm:text-base"
 
 /**
  * ¿El foco está donde Shift + flechas ya tiene un uso propio (seleccionar
@@ -117,7 +117,7 @@ export function AgendaView() {
 
   // En teléfono se ve un solo día (`?day=`) y las flechas avanzan de día en
   // día; al cruzar a otra semana también cambian `?year=&week=`.
-  const isMobile = useMediaQuery("(max-width: 639px)")
+  const isMobile = useIsMobile()
   const visibleDays = isMobile && selectedDay ? [selectedDay] : weekDays
 
   const goToPrevious =
@@ -217,9 +217,9 @@ export function AgendaView() {
               aria-label="Buscar cita"
             />
           </InputGroup>
-          <Button type="submit" variant="outline">
+          <Button type="submit" variant="outline" className="max-sm:min-w-11">
             <Search />
-            Buscar
+            <span className="max-sm:sr-only">Buscar</span>
           </Button>
           {hasFilters && (
             <Button
@@ -229,6 +229,7 @@ export function AgendaView() {
                 setTerm("")
                 clearFilters()
               }}
+              className="max-sm:min-w-11"
               title={
                 isMobile
                   ? "Quitar la búsqueda y volver a hoy"
@@ -305,57 +306,70 @@ export function AgendaView() {
             isFetching && "opacity-60",
           )}
         >
-          <Table className={cn("table-fixed", !isMobile && "min-w-210")}>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                {visibleDays.map((day) => (
-                  <TableHead
-                    key={day.date}
-                    aria-current={day.isToday ? "date" : undefined}
-                    className={cn(
-                      "h-auto border-r border-border/70 px-3 py-2.5 text-center last:border-r-0",
-                      day.isToday ? "bg-primary/10" : "bg-muted/40",
-                    )}
-                  >
-                    <div className="flex flex-col items-center gap-0.5">
-                      <span
-                        className={cn(
-                          "text-xs font-medium uppercase tracking-wide",
-                          day.isToday ? "text-primary" : "text-muted-foreground",
-                        )}
-                      >
-                        {shortDayName(day.date)}
-                      </span>
-                      <span
-                        className={cn(
-                          "flex size-7 items-center justify-center rounded-full text-sm font-semibold tabular-nums",
-                          day.isToday
-                            ? "bg-primary text-primary-foreground"
-                            : "text-foreground",
-                        )}
-                      >
-                        {dayOfMonth(day.date)}
-                      </span>
-                    </div>
-                  </TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
+          {isMobile && selectedDay ? (
+            <div
+              className={cn("rounded-xl p-2", selectedDay.isToday && "bg-primary/5")}
+            >
+              <DayAppointments
+                day={selectedDay}
+                isDeleting={isDeleting}
+                onDelete={canEdit ? deleteAppointment : undefined}
+                onStatusChange={canEdit ? changeStatus : undefined}
+              />
+            </div>
+          ) : (
+            <Table className={cn("table-fixed", !isMobile && "min-w-210")}>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  {visibleDays.map((day) => (
+                    <TableHead
+                      key={day.date}
+                      aria-current={day.isToday ? "date" : undefined}
+                      className={cn(
+                        "h-auto border-r border-border/70 px-3 py-2.5 text-center last:border-r-0",
+                        day.isToday ? "bg-primary/10" : "bg-muted/40",
+                      )}
+                    >
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span
+                          className={cn(
+                            "text-xs font-medium uppercase tracking-wide",
+                            day.isToday ? "text-primary" : "text-muted-foreground",
+                          )}
+                        >
+                          {shortDayName(day.date)}
+                        </span>
+                        <span
+                          className={cn(
+                            "flex size-7 items-center justify-center rounded-full text-sm font-semibold tabular-nums",
+                            day.isToday
+                              ? "bg-primary text-primary-foreground"
+                              : "text-foreground",
+                          )}
+                        >
+                          {dayOfMonth(day.date)}
+                        </span>
+                      </div>
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
 
-            <TableBody>
-              <TableRow className="hover:bg-transparent">
-                {visibleDays.map((day) => (
-                  <DayColumn
-                    key={day.date}
-                    day={day}
-                    isDeleting={isDeleting}
-                    onDelete={canEdit ? deleteAppointment : undefined}
-                    onStatusChange={canEdit ? changeStatus : undefined}
-                  />
-                ))}
-              </TableRow>
-            </TableBody>
-          </Table>
+              <TableBody>
+                <TableRow className="hover:bg-transparent">
+                  {visibleDays.map((day) => (
+                    <DayColumn
+                      key={day.date}
+                      day={day}
+                      isDeleting={isDeleting}
+                      onDelete={canEdit ? deleteAppointment : undefined}
+                      onStatusChange={canEdit ? changeStatus : undefined}
+                    />
+                  ))}
+                </TableRow>
+              </TableBody>
+            </Table>
+          )}
         </div>
       )}
 
@@ -389,90 +403,97 @@ export function AgendaView() {
   )
 }
 
-function DayColumn({
-  day,
-  isDeleting,
-  onDelete,
-  onStatusChange,
-}: {
+type DayAppointmentsProps = {
   day: AgendaDay
   isDeleting: boolean
   /** Sin `onDelete` ni `onStatusChange` las tarjetas son de solo lectura. */
   onDelete?: (id: string) => Promise<unknown>
   onStatusChange?: (id: string, status: AppointmentStatus) => Promise<unknown>
-}) {
+}
+
+function DayColumn(props: DayAppointmentsProps) {
   return (
     <TableCell
       className={cn(
         "border-r border-border/70 p-2 align-top whitespace-normal last:border-r-0",
-        day.isToday && "bg-primary/5",
+        props.day.isToday && "bg-primary/5",
       )}
     >
-      {day.items.length === 0 ? (
-        // `min-height` en un <td> lo ignora el navegador: va en el contenido.
-        <div className="flex min-h-32 items-center justify-center">
-          <p className="text-xs text-muted-foreground/70">Sin citas</p>
-        </div>
-      ) : (
-        <div className="flex min-h-32 flex-col gap-2">
-          {day.items.map((appt) => {
-            const status = STATUS_META[appt.status]
-            return (
-              <article
-                key={appt.id}
-                className="group flex flex-col overflow-hidden rounded-lg border border-border/70 bg-card transition-shadow hover:shadow-sm"
-              >
-                <div className="flex items-center justify-between gap-1 bg-sky-100 px-2.5 py-1.5 dark:bg-sky-950/60">
-                  <span className="text-sm font-semibold tabular-nums text-foreground">
-                    {appt.time}
-                  </span>
-                  {onStatusChange ? (
-                    <StatusSelect
-                      appointment={appt}
-                      onChange={onStatusChange}
-                    />
-                  ) : (
-                    <Badge className={cn(status.className, "text-[10px]")}>
-                      {status.label}
-                    </Badge>
-                  )}
-                </div>
-
-                <div className="flex flex-col gap-1.5 p-2.5">
-                  <PatientLink appointment={appt} />
-
-                  <p className="line-clamp-2 text-xs text-muted-foreground">
-                    {appt.motivo}
-                  </p>
-
-                  {onDelete && (
-                    <ConfirmDialog
-                      trigger={
-                        <button
-                          type="button"
-                          disabled={isDeleting}
-                          aria-label={`Eliminar cita de ${appt.patientName || "paciente"}`}
-                          className="flex items-center gap-1 self-end text-xs text-muted-foreground opacity-0 transition-opacity hover:text-rose-600 focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
-                        >
-                          <Trash2 className="size-3.5" />
-                          Eliminar
-                        </button>
-                      }
-                      title="¿Eliminar esta cita?"
-                      description={`${formatLongDate(appt.date)} · ${appt.time} h${appt.patientName ? ` — ${appt.patientName}` : ""}. La acción no se puede deshacer.`}
-                      confirmLabel="Eliminar cita"
-                      successMessage="La cita se eliminó."
-                      cancelMessage="Se canceló la eliminación de la cita."
-                      onConfirm={() => onDelete(appt.id)}
-                    />
-                  )}
-                </div>
-              </article>
-            )
-          })}
-        </div>
-      )}
+      <DayAppointments {...props} />
     </TableCell>
+  )
+}
+
+/** Tarjetas de las citas de un día: columna de la semana o vista de teléfono. */
+function DayAppointments({
+  day,
+  isDeleting,
+  onDelete,
+  onStatusChange,
+}: DayAppointmentsProps) {
+  return day.items.length === 0 ? (
+    // `min-height` en un <td> lo ignora el navegador: va en el contenido.
+    <div className="flex min-h-32 items-center justify-center">
+      <p className="text-xs text-muted-foreground/70 max-sm:text-sm">Sin citas</p>
+    </div>
+  ) : (
+    <div className="flex min-h-32 flex-col gap-2">
+      {day.items.map((appt) => {
+        const status = STATUS_META[appt.status]
+        return (
+          <article
+            key={appt.id}
+            className="group flex flex-col overflow-hidden rounded-lg border border-border/70 bg-card transition-shadow hover:shadow-sm"
+          >
+            <div className="flex items-center justify-between gap-1 bg-sky-100 px-2.5 py-1.5 max-lg:flex-wrap max-sm:px-3 max-sm:py-2 dark:bg-sky-950/60">
+              <span className="text-sm font-semibold tabular-nums text-foreground max-sm:text-base">
+                {appt.time}
+              </span>
+              {onStatusChange ? (
+                <StatusSelect
+                  appointment={appt}
+                  onChange={onStatusChange}
+                />
+              ) : (
+                <Badge className={cn(status.className, "text-[10px] max-sm:text-xs")}>
+                  {status.label}
+                </Badge>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1.5 p-2.5 max-sm:p-3">
+              <PatientLink appointment={appt} />
+
+              <p className="line-clamp-2 text-xs text-muted-foreground max-sm:text-sm">
+                {appt.motivo}
+              </p>
+
+              {onDelete && (
+                <ConfirmDialog
+                  trigger={
+                    <button
+                      type="button"
+                      disabled={isDeleting}
+                      aria-label={`Eliminar cita de ${appt.patientName || "paciente"}`}
+                      className="flex items-center gap-1 self-end text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-rose-600 focus-visible:opacity-100 disabled:opacity-50 max-lg:touch-hitbox max-lg:opacity-100 max-lg:disabled:opacity-50 max-sm:text-sm"
+                    >
+                      <Trash2 className="size-3.5 max-sm:size-4" />
+                      Eliminar
+                    </button>
+                  }
+                  title="¿Eliminar esta cita?"
+                  description={`${formatLongDate(appt.date)} · ${appt.time} h${appt.patientName ? ` — ${appt.patientName}` : ""}. La acción no se puede deshacer.`}
+                  confirmLabel="Eliminar cita"
+                  successMessage="La cita se eliminó."
+                  cancelMessage="Se canceló la eliminación de la cita."
+                  onConfirm={() => onDelete(appt.id)}
+                />
+              )}
+            </div>
+          </article>
+        )
+      })}
+    </div>
   )
 }
 
@@ -510,6 +531,7 @@ function StatusSelect({
         className={cn(
           meta.className,
           "h-5 cursor-pointer gap-0.5 rounded-4xl border-transparent py-0 pr-1.5 pl-2 text-[10px] font-medium shadow-none data-[size=sm]:h-5 [&_svg]:size-3 [&_svg]:text-current",
+          "max-lg:touch-hitbox max-sm:gap-1 max-sm:pr-2 max-sm:pl-3 max-sm:text-xs max-sm:data-[size=sm]:h-8 max-sm:[&_svg]:size-3.5",
         )}
       >
         {pending !== null && <Loader2 className="animate-spin" />}
@@ -594,7 +616,7 @@ function PatientLink({ appointment }: { appointment: Appointment }) {
   return (
     <Link
       to={`/pacientes/${appointment.patientId}`}
-      className="text-sm font-medium wrap-break-word text-primary underline-offset-2 hover:underline"
+      className="text-sm font-medium wrap-break-word text-primary underline-offset-2 hover:underline max-lg:touch-hitbox max-sm:text-base"
       title={appointment.patientName || `Paciente #${appointment.patientId}`}
     >
       {appointment.patientName || `Paciente #${appointment.patientId}`}

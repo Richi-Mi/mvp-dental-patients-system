@@ -17,9 +17,11 @@ import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/custom/calendar"
 import { usePatients } from "@/hooks/usePatients"
 import { todayISO, validateBirthDate } from "@/lib/clinic-data"
+import { MOBILE_CARD } from "@/lib/responsive"
+import { cn } from "@/lib/utils"
 
 const fieldControl =
-  "flex h-9 w-full cursor-pointer rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+  "flex h-9 w-full cursor-pointer rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 max-sm:text-base"
 
 const EMPTY = {
   name: "",
@@ -100,7 +102,7 @@ export function PatientFormView() {
         </h1>
       </div>
 
-      <Card className="max-w-2xl border-border/70">
+      <Card className={cn("max-w-2xl border-border/70", MOBILE_CARD)}>
         <CardHeader>
           <CardTitle className="text-base">Datos del expediente</CardTitle>
           <CardDescription>
@@ -220,7 +222,7 @@ export function PatientFormView() {
                 </p>
               )}
 
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex items-center justify-end gap-2 max-sm:*:flex-1">
                 <Button type="button" variant="outline" onClick={goBack}>
                   Cancelar
                 </Button>

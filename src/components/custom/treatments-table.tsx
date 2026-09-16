@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/custom/calendar"
+import { useIsMobile } from "@/hooks/useMediaQuery"
 import {
   Table,
   TableBody,
@@ -28,6 +29,7 @@ import {
   treatmentsTotal,
 } from "@/lib/clinic-data"
 import { toNumber } from "@/lib/mappers"
+import { MOBILE_CARD } from "@/lib/responsive"
 import { cn } from "@/lib/utils"
 import type { Treatment } from "@/types/clinic"
 
@@ -111,6 +113,8 @@ export function TreatmentsTable({
   const [rows, setRows] = React.useState(() => toRows(treatments))
   const [syncedSignature, setSyncedSignature] = React.useState(savedSignature)
   const focusRowKey = React.useRef<string | null>(null)
+  // En teléfono las filas se vuelven tarjetas: la tabla de 5 columnas no cabe.
+  const isMobile = useIsMobile()
 
   // Cuando el servidor devuelve otra lista (al guardar o al cambiar de
   // paciente) la tabla se re-sincroniza. Ajustar el estado durante el render
@@ -170,44 +174,60 @@ export function TreatmentsTable({
     addRowAfter(key)
   }
 
+  /** El ref enfoca la fila recién agregada (Enter o "Nuevo registro"). */
+  function focusIfNew(el: HTMLInputElement | null, key: string) {
+    if (el && focusRowKey.current === key) {
+      focusRowKey.current = null
+      el.focus()
+    }
+  }
+
+  // En teléfono van al final de la lista, donde termina la captura.
+  const actions = (
+    <div className="flex shrink-0 items-center gap-2 max-sm:w-full max-sm:*:flex-1">
+      {isDirty && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setRows(toRows(treatments))}
+          disabled={isSaving}
+        >
+          <Undo2 data-icon="inline-start" />
+          Descartar
+        </Button>
+      )}
+      <Button
+        size="sm"
+        onClick={handleSave}
+        disabled={!isDirty || isSaving}
+      >
+        {isSaving ? (
+          <Loader2 data-icon="inline-start" className="animate-spin" />
+        ) : (
+          <Save data-icon="inline-start" />
+        )}
+        {isSaving ? "Guardando..." : "Guardar cambios"}
+      </Button>
+    </div>
+  )
+
   return (
-    <Card className="border-border/70">
+    <Card className={cn("border-border/70", MOBILE_CARD)}>
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-64 flex-1">
+          <div className="min-w-64 flex-1 max-sm:min-w-0">
             <CardTitle className="text-base">Control de tratamiento</CardTitle>
             <CardDescription>
-              Edita las filas y guarda todos los cambios juntos. Pulsa{" "}
-              <Kbd>Enter</Kbd> para agregar otra fila y <Kbd>Shift + Enter</Kbd>{" "}
-              para guardar.
+              Edita las filas y guarda todos los cambios juntos.
+              {/* Los atajos de teclado no aplican en pantallas táctiles. */}
+              <span className="max-lg:hidden">
+                {" "}Pulsa <Kbd>Enter</Kbd> para agregar otra fila y{" "}
+                <Kbd>Shift + Enter</Kbd> para guardar.
+              </span>
             </CardDescription>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
-            {isDirty && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setRows(toRows(treatments))}
-                disabled={isSaving}
-              >
-                <Undo2 data-icon="inline-start" />
-                Descartar
-              </Button>
-            )}
-            <Button
-              size="sm"
-              onClick={handleSave}
-              disabled={!isDirty || isSaving}
-            >
-              {isSaving ? (
-                <Loader2 data-icon="inline-start" className="animate-spin" />
-              ) : (
-                <Save data-icon="inline-start" />
-              )}
-              {isSaving ? "Guardando..." : "Guardar cambios"}
-            </Button>
-          </div>
+          {!isMobile && actions}
         </div>
       </CardHeader>
 
@@ -220,67 +240,62 @@ export function TreatmentsTable({
           </p>
         )}
 
-        <div className="overflow-x-auto rounded-lg border border-border/70">
-          <Table className="min-w-[560px]">
-            <TableHeader>
-              <TableRow className="bg-muted/60 hover:bg-muted/60">
-                <TableHead className="w-40">Fecha</TableHead>
-                <TableHead>Tratamiento</TableHead>
-                <TableHead className="w-28 text-right">Costo</TableHead>
-                <TableHead className="w-28 text-right">A cuenta</TableHead>
-                <TableHead className="w-12" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.key} className="hover:bg-transparent">
-                  <TableCell className="whitespace-nowrap">
-                    <DatePicker
-                      value={row.fecha}
-                      onChange={(fecha) => updateRow(row.key, { fecha })}
-                      onKeyDown={handleDateKeyDown}
-                      // Un tratamiento registra algo que ya ocurrió: no se
-                      // limita a los días de atención como sí hacen las citas.
-                      isDateDisabled={() => false}
-                      format="short"
-                      aria-label="Fecha"
-                      className="h-8 text-xs"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      ref={(el) => {
-                        if (el && focusRowKey.current === row.key) {
-                          focusRowKey.current = null
-                          el.focus()
-                        }
-                      }}
-                      placeholder="Tratamiento"
-                      value={row.tratamiento}
-                      onChange={(e) =>
-                        updateRow(row.key, { tratamiento: e.target.value })
-                      }
-                      onKeyDown={(e) => handleKeyDown(e, row.key)}
-                      aria-label="Tratamiento"
-                      className="h-8 text-xs"
-                    />
-                  </TableCell>
-                  <TableCell>
+        {isMobile ? (
+          <div className="flex flex-col gap-3">
+            {rows.map((row) => (
+              <div
+                key={row.key}
+                className="flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/20 p-3"
+              >
+                <div className="flex items-center gap-2">
+                  <DatePicker
+                    value={row.fecha}
+                    onChange={(fecha) => updateRow(row.key, { fecha })}
+                    isDateDisabled={() => false}
+                    format="short"
+                    aria-label="Fecha"
+                    className="flex-1"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeRow(row.key)}
+                    className="text-muted-foreground hover:text-rose-600"
+                    aria-label={`Eliminar ${row.tratamiento || "registro"}`}
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+                <Input
+                  ref={(el) => focusIfNew(el, row.key)}
+                  placeholder="Tratamiento"
+                  value={row.tratamiento}
+                  onChange={(e) =>
+                    updateRow(row.key, { tratamiento: e.target.value })
+                  }
+                  onKeyDown={(e) => handleKeyDown(e, row.key)}
+                  aria-label="Tratamiento"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    Costo
                     <Input
                       type="number"
+                      inputMode="decimal"
                       min="0"
                       step="0.01"
                       placeholder="0"
                       value={row.costo}
                       onChange={(e) => updateRow(row.key, { costo: e.target.value })}
                       onKeyDown={(e) => handleKeyDown(e, row.key)}
-                      aria-label="Costo"
-                      className="h-8 text-right text-xs"
+                      className="text-right"
                     />
-                  </TableCell>
-                  <TableCell>
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    A cuenta
                     <Input
                       type="number"
+                      inputMode="decimal"
                       min="0"
                       step="0.01"
                       placeholder="0"
@@ -289,51 +304,133 @@ export function TreatmentsTable({
                         updateRow(row.key, { aCuenta: e.target.value })
                       }
                       onKeyDown={(e) => handleKeyDown(e, row.key)}
-                      aria-label="A cuenta"
-                      className="h-8 text-right text-xs"
+                      className="text-right"
                     />
-                  </TableCell>
-                  <TableCell>
-                    <button
-                      type="button"
-                      onClick={() => removeRow(row.key)}
-                      className="flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-rose-600"
-                      aria-label={`Eliminar ${row.tratamiento || "registro"}`}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
+                  </label>
+                </div>
+              </div>
+            ))}
+
+            <Button
+              variant="outline"
+              className="border-dashed text-primary"
+              onClick={() => addRowAfter()}
+            >
+              <Plus data-icon="inline-start" />
+              Nuevo registro
+            </Button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-border/70">
+            <Table className="min-w-[560px]">
+              <TableHeader>
+                <TableRow className="bg-muted/60 hover:bg-muted/60">
+                  <TableHead className="w-40">Fecha</TableHead>
+                  <TableHead>Tratamiento</TableHead>
+                  <TableHead className="w-28 text-right">Costo</TableHead>
+                  <TableHead className="w-28 text-right">A cuenta</TableHead>
+                  <TableHead className="w-12" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((row) => (
+                  <TableRow key={row.key} className="hover:bg-transparent">
+                    <TableCell className="whitespace-nowrap">
+                      <DatePicker
+                        value={row.fecha}
+                        onChange={(fecha) => updateRow(row.key, { fecha })}
+                        onKeyDown={handleDateKeyDown}
+                        // Un tratamiento registra algo que ya ocurrió: no se
+                        // limita a los días de atención como sí hacen las citas.
+                        isDateDisabled={() => false}
+                        format="short"
+                        aria-label="Fecha"
+                        className="h-8 text-xs"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        ref={(el) => focusIfNew(el, row.key)}
+                        placeholder="Tratamiento"
+                        value={row.tratamiento}
+                        onChange={(e) =>
+                          updateRow(row.key, { tratamiento: e.target.value })
+                        }
+                        onKeyDown={(e) => handleKeyDown(e, row.key)}
+                        aria-label="Tratamiento"
+                        className="h-8 text-xs"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0"
+                        value={row.costo}
+                        onChange={(e) => updateRow(row.key, { costo: e.target.value })}
+                        onKeyDown={(e) => handleKeyDown(e, row.key)}
+                        aria-label="Costo"
+                        className="h-8 text-right text-xs"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0"
+                        value={row.aCuenta}
+                        onChange={(e) =>
+                          updateRow(row.key, { aCuenta: e.target.value })
+                        }
+                        onKeyDown={(e) => handleKeyDown(e, row.key)}
+                        aria-label="A cuenta"
+                        className="h-8 text-right text-xs"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <button
+                        type="button"
+                        onClick={() => removeRow(row.key)}
+                        className="flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-rose-600 max-lg:size-11"
+                        aria-label={`Eliminar ${row.tratamiento || "registro"}`}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+
+                <TableRow
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => addRowAfter()}
+                >
+                  <TableCell colSpan={5}>
+                    <span className="flex items-center gap-2 text-sm font-medium text-primary">
+                      <Plus className="size-4" />
+                      Nuevo registro
+                    </span>
                   </TableCell>
                 </TableRow>
-              ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
 
-              <TableRow
-                className="cursor-pointer hover:bg-muted/50"
-                onClick={() => addRowAfter()}
-              >
-                <TableCell colSpan={5}>
-                  <span className="flex items-center gap-2 text-sm font-medium text-primary">
-                    <Plus className="size-4" />
-                    Nuevo registro
-                  </span>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center justify-end gap-x-8 gap-y-1 text-sm">
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-x-8 gap-y-1 text-sm max-sm:flex-col max-sm:items-stretch">
           {isDirty && (
-            <span className="mr-auto text-xs text-amber-600">
+            <span className="mr-auto text-xs text-amber-600 max-sm:mr-0">
               Hay cambios sin guardar.
             </span>
           )}
-          <span className="text-muted-foreground">
+          <span className="text-muted-foreground max-sm:flex max-sm:justify-between">
             Total tratamientos:{" "}
             <span className="font-medium tabular-nums text-foreground">
               {formatCurrency(treatmentsTotal(pending))}
             </span>
           </span>
-          <span className="text-muted-foreground">
+          <span className="text-muted-foreground max-sm:flex max-sm:justify-between">
             Saldo pendiente:{" "}
             <span
               className={cn(
@@ -347,6 +444,8 @@ export function TreatmentsTable({
             </span>
           </span>
         </div>
+
+        {isMobile && <div className="mt-4">{actions}</div>}
       </CardContent>
     </Card>
   )

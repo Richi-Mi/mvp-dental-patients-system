@@ -37,6 +37,8 @@ import {
   formatCurrency,
   salesSeries,
 } from "@/lib/clinic-data"
+import { MOBILE_CARD } from "@/lib/responsive"
+import { cn } from "@/lib/utils"
 
 const salesConfig = {
   ventas: { label: "Ventas", color: "var(--chart-1)" },
@@ -140,13 +142,13 @@ export function DashboardView() {
       </div>
 
       {/* 2. Ventas por mes */}
-      <Card className="border-border/70">
+      <Card className={cn("border-border/70", MOBILE_CARD)}>
         <CardHeader>
           <CardTitle className="text-base">Ventas por mes</CardTitle>
           <CardDescription>Ingresos por tratamientos (MXN)</CardDescription>
         </CardHeader>
         <CardContent>
-          <ChartContainer config={salesConfig} className="h-72 w-full">
+          <ChartContainer config={salesConfig} className="h-72 w-full max-sm:h-56">
             <BarChart data={salesData} margin={{ left: 4, right: 8, top: 8 }}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis
@@ -182,13 +184,13 @@ export function DashboardView() {
       </div>
 
       {/* 4. Citas por mes */}
-      <Card className="border-border/70">
+      <Card className={cn("border-border/70", MOBILE_CARD)}>
         <CardHeader>
           <CardTitle className="text-base">Citas por mes</CardTitle>
           <CardDescription>Número de citas agendadas</CardDescription>
         </CardHeader>
         <CardContent>
-          <ChartContainer config={apptConfig} className="h-72 w-full">
+          <ChartContainer config={apptConfig} className="h-72 w-full max-sm:h-56">
             <LineChart data={apptData} margin={{ left: 4, right: 8, top: 8 }}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis
@@ -223,7 +225,7 @@ export function DashboardView() {
 function MetricCard({ metric }: { metric: Metric }) {
   const Icon = metric.icon
   return (
-    <Card className="border-border/70">
+    <Card className={cn("border-border/70", MOBILE_CARD)}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardDescription>{metric.label}</CardDescription>

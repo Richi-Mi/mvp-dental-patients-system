@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import {
     Dialog,
     DialogClose,
-    DialogContent,
     DialogDescription,
     DialogFooter,
     DialogHeader,
@@ -17,16 +16,18 @@ import {
 import { Input } from "@/components/ui/input"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { DatePicker } from "@/components/custom/calendar"
+import { ResponsiveDialogContent } from "@/components/custom/responsive-dialog"
 import { TimePicker } from "@/components/custom/time-picker"
 import { useAgenda } from "@/hooks/useAgenda"
 import { useNewAppointmentDialog } from "@/hooks/useNewAppointmentDialog"
 import { usePatients } from "@/hooks/usePatients"
 import { STATUS_META, isClosedDay, weekdayName } from "@/lib/clinic-data"
+import { MOBILE_FAB } from "@/lib/responsive"
 import { useUiStore } from "@/store/ui.store"
 import type { AppointmentStatus } from "@/types/clinic"
 
 const fieldControl =
-    "flex h-9 w-full cursor-pointer rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+    "flex h-9 w-full min-w-0 cursor-pointer rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 max-sm:text-base"
 
 /** `?cita=nueva` abre el diálogo; `?paciente=<id>` preselecciona al paciente. */
 export function NewAppointmentDialog() {
@@ -107,6 +108,7 @@ export function NewAppointmentDialog() {
         <>
             <Button
                 size="sm"
+                className={MOBILE_FAB}
                 onClick={() => setOpen(true)}
                 title="Nueva cita (Shift + ↑)"
                 aria-keyshortcuts="Shift+ArrowUp"
@@ -116,7 +118,7 @@ export function NewAppointmentDialog() {
             </Button>
 
             <Dialog open={open} onOpenChange={setOpen}>
-                <DialogContent className="sm:max-w-md">
+                <ResponsiveDialogContent className="sm:max-w-md">
                     <form onSubmit={handleSubmit}>
                         <DialogHeader>
                             <DialogTitle>Nueva cita</DialogTitle>
@@ -156,7 +158,7 @@ export function NewAppointmentDialog() {
 
                             <Field>
                                 <FieldLabel htmlFor="na-patient">Paciente</FieldLabel>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 max-sm:flex-col max-sm:items-stretch">
                                     <select
                                         id="na-patient"
                                         className={fieldControl}
@@ -186,7 +188,7 @@ export function NewAppointmentDialog() {
                                 </div>
                             </Field>
 
-                            <div className="grid grid-cols-[1fr_auto] gap-4">
+                            <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
                                 <Field>
                                     <FieldLabel htmlFor="na-date">Fecha</FieldLabel>
                                     <DatePicker
@@ -268,7 +270,7 @@ export function NewAppointmentDialog() {
                             </Button>
                         </DialogFooter>
                     </form>
-                </DialogContent>
+                </ResponsiveDialogContent>
             </Dialog>
         </>
     )
