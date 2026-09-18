@@ -458,3 +458,57 @@ export function salesSeries(ventasPorMes: number[]) {
 export function appointmentsSeries(citasPorMes: number[]) {
   return MONTHS_SHORT.map((mes, i) => ({ mes, citas: citasPorMes[i] ?? 0 }))
 }
+
+/** Primer año con datos del consultorio: el dashboard ofrece de aquí al año en curso. */
+export const DASHBOARD_FIRST_YEAR = 2026
+
+/** Valor de `?month=` para ver todo el año en el dashboard. */
+export const DASHBOARD_WHOLE_YEAR = "todo"
+
+/** Periodo del dashboard: `month` de 1 a 12, o `null` para todo el año. */
+export type DashboardPeriod = { year: number; month: number | null }
+
+/** Meses para un selector: `{ value: 1, label: "Enero" }` … */
+export const MONTH_OPTIONS = MONTHS_LONG.map((label, i) => ({ value: i + 1, label }))
+
+/**
+ * Años del selector del dashboard, del más reciente al más antiguo: de
+ * `DASHBOARD_FIRST_YEAR` al año en curso, así que cada enero aparece el año
+ * nuevo sin tocar código.
+ */
+export function dashboardYears(today: Date = new Date()): number[] {
+  const last = Math.max(today.getFullYear(), DASHBOARD_FIRST_YEAR)
+  return Array.from({ length: last - DASHBOARD_FIRST_YEAR + 1 }, (_, i) => last - i)
+}
+
+/**
+ * Periodo del dashboard desde la URL (`?year=&month=`). Sin parámetros, o con
+ * un año fuera de `dashboardYears` o un mes inválido, se usa el mes en curso
+ * del año actual. `?month=todo` = todo el año.
+ */
+export function readDashboardPeriod(
+  params: URLSearchParams,
+  today: Date = new Date(),
+): DashboardPeriod {
+  const years = dashboardYears(today)
+  const year = Number(params.get("year"))
+  const rawMonth = params.get("month")
+  const month = Number(rawMonth)
+
+  return {
+    year: years.includes(year) ? year : years[0],
+    month:
+      rawMonth === DASHBOARD_WHOLE_YEAR
+        ? null
+        : Number.isInteger(month) && month >= 1 && month <= 12
+          ? month
+          : today.getMonth() + 1,
+  }
+}
+
+/** "septiembre de 2026", o "2026" si es todo el año. */
+export function formatDashboardPeriod({ year, month }: DashboardPeriod): string {
+  return month === null
+    ? String(year)
+    : `${MONTHS_LONG[month - 1].toLowerCase()} de ${year}`
+}

@@ -46,6 +46,8 @@ export type PacienteDTO = {
   nombre: string
   sexo: string
   isActive: boolean
+  /** Timestamp ISO de registro; los pacientes anteriores tienen la fecha de la migración. */
+  fecha_creacion: string
   correo_medico: string | null
   medico?: UsuarioDTO | null
   tratamientos?: TratamientoDTO[]
@@ -133,20 +135,29 @@ export type HistorialPayload = {
   historial: Partial<Record<PreguntaHistorial, string | null>>
 }
 
-/** `GET /user/dashboard` — métricas anuales ya agregadas por el backend. */
+/**
+ * `GET /user/dashboard` — métricas ya agregadas por el backend. Los totales
+ * son del periodo pedido (un mes, o todo el año); las series, del año completo.
+ */
 export type DashboardDTO = {
   year: number
+  /** 1 = enero … 12 = diciembre; `null` = todo el año. */
+  month: number | null
   ventasTotales: number
   consultasTotales: number
-  pacientesTotales: number
   dineroPorCobrar: number
+  /** Pacientes activos registrados en el periodo. */
+  pacientesNuevos: number
+  /** Histórico de pacientes activos: no se acota al periodo. */
+  pacientesTotales: number
   /** 12 posiciones, índice 0 = enero. */
   ventasPorMes: number[]
   /** 12 posiciones, índice 0 = enero. */
   citasPorMes: number[]
 }
 
-export type DashboardQuery = { year?: number }
+/** Sin `month` responde con todo el año. */
+export type DashboardQuery = { year?: number; month?: number }
 
 /** `GET /pacientes` — un asistente pide los pacientes del médico que atiende. */
 export type PacientesQuery = { correo_medico?: string }

@@ -48,6 +48,17 @@ export function toISODate(value: string | Date): string {
   return Number.isNaN(parsed.getTime()) ? "" : toISODateString(parsed)
 }
 
+/**
+ * Timestamp del API -> `yyyy-mm-dd` del día local. No sirven `parseISO` (solo
+ * lee `yyyy-mm-dd`) ni `toISODate` (recorta el día en UTC, que en México ya
+ * es el siguiente por la noche). `""` si no es una fecha válida.
+ */
+export function toLocalISODate(value: string | null | undefined): string {
+  if (!value) return ""
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? "" : toISODateString(parsed)
+}
+
 /** `yyyy-mm-dd` + `HH:mm` (local) -> ISO timestamp for the API. */
 export function toISODateTime(date: string, time: string): string {
   const [y, m, d] = date.split("-").map(Number)
@@ -84,8 +95,10 @@ export function toDashboard(dto: DashboardDTO): DashboardMetrics {
 
   return {
     year: toNumber(dto.year),
+    month: dto.month == null ? null : toNumber(dto.month),
     ventasTotales,
     consultasTotales: toNumber(dto.consultasTotales),
+    pacientesNuevos: toNumber(dto.pacientesNuevos),
     pacientesTotales: toNumber(dto.pacientesTotales),
     dineroPorCobrar,
     // El endpoint no manda los abonos, pero `dineroPorCobrar` es
@@ -179,6 +192,7 @@ export function toPatient(dto: PacienteDTO): Patient {
     cp: dto.cp ?? "",
     notes: dto.notas ?? "",
     medicoEmail: dto.correo_medico,
+    createdAt: toLocalISODate(dto.fecha_creacion),
     treatments: (dto.tratamientos ?? []).map(toTreatment),
     upcoming: (dto.proximasCitas ?? []).map(toAppointment),
     clinicalHistory: dto.historialClinico

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import {
   Bar,
   BarChart,
@@ -12,6 +13,7 @@ import {
   HandCoins,
   Loader2,
   Stethoscope,
+  UserPlus,
   Users,
   Wallet,
   type LucideIcon,
@@ -33,9 +35,13 @@ import {
 import { useDashboard } from "@/hooks/useDashboard"
 import {
   appointmentsSeries,
+  DASHBOARD_WHOLE_YEAR,
   formatCompactCurrency,
   formatCurrency,
+  formatDashboardPeriod,
+  MONTH_OPTIONS,
   salesSeries,
+  type DashboardPeriod,
 } from "@/lib/clinic-data"
 import { MOBILE_CARD } from "@/lib/responsive"
 import { cn } from "@/lib/utils"
@@ -58,9 +64,23 @@ type Metric = {
 /** Sin datos (cargando o con error) se muestra "—" en vez de un cero engañoso. */
 const EMPTY_VALUE = "—"
 
+const fieldControl =
+  "flex h-9 w-full min-w-0 cursor-pointer rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 max-sm:text-base"
+
 export function DashboardView() {
-  const year = new Date().getFullYear()
-  const { metrics: data, isFetching, error } = useDashboard(year)
+  const {
+    period,
+    years,
+    setPeriod,
+    metrics: data,
+    isFetching,
+    isPlaceholderData,
+    error,
+  } = useDashboard()
+  const { year } = period
+  const periodLabel = formatDashboardPeriod(period)
+  // Cifras del periodo anterior mientras llegan las del nuevo.
+  const stale = cn("transition-opacity", isPlaceholderData && "opacity-60")
 
   const money = (value: number | undefined) =>
     data && value !== undefined ? formatCurrency(value) : EMPTY_VALUE
@@ -71,7 +91,7 @@ export function DashboardView() {
     {
       label: "Ventas totales",
       value: money(data?.ventasTotales),
-      hint: `Tratamientos de ${year}`,
+      hint: `Tratamientos de ${periodLabel}`,
       icon: DollarSign,
     },
     {
@@ -92,15 +112,21 @@ export function DashboardView() {
     {
       label: "Consultas totales",
       value: count(data?.consultasTotales),
-      hint: `Citas registradas en ${year}`,
+      hint: `Citas registradas en ${periodLabel}`,
       icon: Stethoscope,
     },
     {
       label: "Pacientes totales",
       value: count(data?.pacientesTotales),
-      // El backend no acota este dato por año: es el histórico de activos.
+      // El backend no acota este dato al periodo: es el histórico de activos.
       hint: "Expedientes activos (histórico)",
       icon: Users,
+    },
+    {
+      label: "Pacientes nuevos",
+      value: count(data?.pacientesNuevos),
+      hint: `Registrados en ${periodLabel}`,
+      icon: UserPlus,
     },
   ]
 
@@ -109,21 +135,24 @@ export function DashboardView() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Dashboard
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              Dashboard
+            </h1>
+            {isFetching && (
+              <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                Cargando...
+              </span>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground">
-            Métricas clave del consultorio en {year}.
+            Métricas clave del consultorio en {periodLabel}.
           </p>
         </div>
-        {isFetching && (
-          <span className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-            Cargando...
-          </span>
-        )}
+        <PeriodFilters period={period} years={years} onChange={setPeriod} />
       </div>
 
       {error && (
@@ -135,17 +164,17 @@ export function DashboardView() {
       )}
 
       {/* 1. Dinero */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className={cn("grid gap-4 sm:grid-cols-3", stale)}>
         {moneyMetrics.map((m) => (
           <MetricCard key={m.label} metric={m} />
         ))}
       </div>
 
-      {/* 2. Ventas por mes */}
-      <Card className={cn("border-border/70", MOBILE_CARD)}>
+      {/* 2. Ventas por mes (siempre el año completo) */}
+      <Card className={cn("border-border/70", MOBILE_CARD, stale)}>
         <CardHeader>
           <CardTitle className="text-base">Ventas por mes</CardTitle>
-          <CardDescription>Ingresos por tratamientos (MXN)</CardDescription>
+          <CardDescription>Ingresos por tratamientos en {year} (MXN)</CardDescription>
         </CardHeader>
         <CardContent>
           <ChartContainer config={salesConfig} className="h-72 w-full max-sm:h-56">
@@ -177,17 +206,17 @@ export function DashboardView() {
       </Card>
 
       {/* 3. Actividad */}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className={cn("grid gap-4 sm:grid-cols-3", stale)}>
         {activityMetrics.map((m) => (
           <MetricCard key={m.label} metric={m} />
         ))}
       </div>
 
-      {/* 4. Citas por mes */}
-      <Card className={cn("border-border/70", MOBILE_CARD)}>
+      {/* 4. Citas por mes (siempre el año completo) */}
+      <Card className={cn("border-border/70", MOBILE_CARD, stale)}>
         <CardHeader>
           <CardTitle className="text-base">Citas por mes</CardTitle>
-          <CardDescription>Número de citas agendadas</CardDescription>
+          <CardDescription>Número de citas agendadas en {year}</CardDescription>
         </CardHeader>
         <CardContent>
           <ChartContainer config={apptConfig} className="h-72 w-full max-sm:h-56">
@@ -218,6 +247,89 @@ export function DashboardView() {
           </ChartContainer>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+/**
+ * Segmentadores de mes y año. Filtran las tarjetas; las gráficas siempre
+ * muestran los 12 meses del año elegido.
+ */
+function PeriodFilters({
+  period,
+  years,
+  onChange,
+}: {
+  period: DashboardPeriod
+  years: number[]
+  onChange: (period: DashboardPeriod) => void
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:flex sm:items-end">
+      <FilterSelect
+        id="dashboard-mes"
+        label="Mes"
+        className="sm:w-40"
+        value={period.month === null ? DASHBOARD_WHOLE_YEAR : String(period.month)}
+        onChange={(value) =>
+          onChange({
+            ...period,
+            month: value === DASHBOARD_WHOLE_YEAR ? null : Number(value),
+          })
+        }
+      >
+        <option value={DASHBOARD_WHOLE_YEAR}>Todo el año</option>
+        {MONTH_OPTIONS.map((month) => (
+          <option key={month.value} value={month.value}>
+            {month.label}
+          </option>
+        ))}
+      </FilterSelect>
+      <FilterSelect
+        id="dashboard-anio"
+        label="Año"
+        className="sm:w-28"
+        value={String(period.year)}
+        onChange={(value) => onChange({ ...period, year: Number(value) })}
+      >
+        {years.map((y) => (
+          <option key={y} value={y}>
+            {y}
+          </option>
+        ))}
+      </FilterSelect>
+    </div>
+  )
+}
+
+function FilterSelect({
+  id,
+  label,
+  value,
+  onChange,
+  className,
+  children,
+}: {
+  id: string
+  label: string
+  value: string
+  onChange: (value: string) => void
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <div className={cn("flex flex-col gap-1.5", className)}>
+      <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
+        {label}
+      </label>
+      <select
+        id={id}
+        className={fieldControl}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {children}
+      </select>
     </div>
   )
 }

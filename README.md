@@ -142,7 +142,7 @@ La protección está en **loaders**, no en componentes. La sesión de Zustand se
 - **Importes**: el backend envía `numeric` como string (`"1200.00"`) pero valida `number` al recibir. `toNumber` en `mappers.ts` normaliza en ambos sentidos.
 - **Tratamientos**: `PUT /pacientes/:id` reemplaza la lista completa, así que la tabla de tratamientos se edita en bloque y se guarda con una sola petición.
 - **Alta de paciente desde una cita**: el diálogo de nueva cita se controla por URL (`/agenda?cita=nueva`) y su borrador vive en `ui.store`. Al pasar por `/pacientes/nuevo?redirectTo=…` no se pierde lo capturado, y el paciente creado vuelve preseleccionado (`&paciente=<id>`).
-- **Dashboard**: una sola petición a `GET /user/dashboard?year=`, que ya viene agregada.
+- **Dashboard**: una sola petición a `GET /user/dashboard?year=&month=`, que ya viene agregada. El mes y el año se eligen con segmentadores y viven en la URL.
 
 La interfaz y los formatos están en **español (es-MX)**. Usa los helpers de `clinic-data.ts` (`formatCurrency`, `formatLongDate`, …) para textos nuevos.
 

@@ -6,7 +6,8 @@ export const queryKeys = {
   },
   dashboard: {
     all: ["dashboard"] as const,
-    byYear: (year: number) => ["dashboard", year] as const,
+    byPeriod: (year: number, month: number | null) =>
+      ["dashboard", year, month ?? "todo"] as const,
   },
   users: {
     all: ["usuarios"] as const,

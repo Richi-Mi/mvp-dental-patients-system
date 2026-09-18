@@ -81,6 +81,7 @@ Formas de salida más comunes (ya sin `password` y con relaciones aplanadas). Lo
   nombre: string,
   sexo: string,
   isActive: boolean,
+  fecha_creacion: string,           // timestamp ISO; lo asigna el backend al crear el paciente
   correo_medico: string | null,
   medico?: Usuario | null,          // solo si la ruta carga la relación
   tratamientos?: Tratamiento[],     // solo en GET /pacientes/:id y tras PUT con `tratamientos`

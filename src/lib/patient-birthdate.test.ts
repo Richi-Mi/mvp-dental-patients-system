@@ -88,8 +88,15 @@ describe("toPatient", () => {
     nombre: "Ana",
     sexo: "Femenino",
     isActive: true,
+    fecha_creacion: "2026-09-16T15:30:00.000Z",
     correo_medico: null,
   }
+
+  test("fecha_creacion se convierte al día local, no al día en UTC", () => {
+    // 23:30 del 16 de septiembre en hora local; en UTC puede ser ya el 17.
+    const fecha_creacion = new Date(2026, 8, 16, 23, 30).toISOString()
+    expect(toPatient({ ...base, fecha_creacion }).createdAt).toBe("2026-09-16")
+  })
 
   test("pacientes anteriores quedan con birthDate null", () => {
     expect(toPatient(base).birthDate).toBeNull()

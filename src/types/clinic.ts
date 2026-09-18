@@ -42,6 +42,8 @@ export type Patient = {
   cp: string
   notes: string
   medicoEmail: string | null
+  /** `yyyy-mm-dd` (día local) en que se registró el paciente. */
+  createdAt: string
   /** Only populated by `GET /pacientes/:id`. */
   treatments: Treatment[]
   /** Only populated by `GET /pacientes/:id`. */
@@ -76,8 +78,12 @@ export type TreatmentInput = Omit<Treatment, "id">
 
 export type DashboardMetrics = {
   year: number
+  /** 1 = enero … 12 = diciembre; `null` = todo el año. */
+  month: number | null
   ventasTotales: number
   consultasTotales: number
+  pacientesNuevos: number
+  /** Histórico de pacientes activos: no se acota al periodo. */
   pacientesTotales: number
   dineroPorCobrar: number
   /** Derivado en el cliente: el endpoint no lo devuelve (ver `toDashboard`). */
