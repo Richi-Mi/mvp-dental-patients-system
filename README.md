@@ -77,23 +77,29 @@ src/
 ├── routes.tsx            # Árbol de rutas y loaders (importable sin DOM)
 ├── router.tsx            # createHashRouter(routes)
 ├── api/                  # Capa HTTP
-│   ├── client.ts         # Instancia de Axios, header `token`, normalización a ApiError
+│   ├── client.ts         # Instancia de Axios, header `token`, normalización a ApiError, detecta errores de red
 │   ├── endpoints.ts      # Mapa de rutas del backend
 │   └── types.ts          # DTOs tal como los envía el servidor
 ├── actions/              # Una función async por endpoint; traduce DTO <-> modelo de UI
+│   └── offline.actions.ts  # Reenvía al backend un cambio guardado sin conexión (ver Modo sin conexión)
 ├── hooks/                # TanStack Query sobre las actions (useAuth, usePatients, useAgenda, …)
-├── store/                # Zustand: auth.store (sesión) y ui.store (filtros, borrador de cita)
+│   ├── useOfflineSync.ts       # Motor de reconexión/reintento + versión sin efectos (useOfflineStatus/useSyncNow)
+│   └── useOwnPendingOperations.ts  # Cambios sin sincronizar de la sesión activa
+├── store/                # Zustand: auth.store (sesión), ui.store (filtros, borrador de cita) y offline.store (cola sin conexión, en localStorage)
 ├── lib/
 │   ├── mappers.ts        # DTO <-> dominio (fechas, importes)
 │   ├── clinic-data.ts    # Formato es-MX, semanas ISO, días de atención
 │   ├── query-client.ts   # Configuración de TanStack Query
-│   └── query-keys.ts     # Claves de caché
+│   ├── query-keys.ts     # Claves de caché
+│   ├── offline-queue.ts  # Lógica pura de la cola sin conexión (compactar cambios, combinarlos con datos del servidor)
+│   ├── save-or-queue.ts  # Intenta guardar en el servidor; si no hay conexión, encola
+│   └── offline-sync.ts   # Reenvía la cola pendiente y refresca las consultas al recuperar conexión
 ├── types/clinic.ts       # Tipos de dominio
-├── layouts/AppLayout.tsx # Layout autenticado (navegación + <Outlet/>)
+├── layouts/AppLayout.tsx # Layout autenticado (navegación + <Outlet/>; monta el motor de sincronización)
 ├── pages/                # Una vista por ruta
 └── components/
     ├── ui/               # Generados por shadcn (no editar a mano)
-    └── custom/           # Componentes propios (diálogos, confirm-dialog, calendario, time-picker, tabla de tratamientos)
+    └── custom/           # Componentes propios (diálogos, confirm-dialog, calendario, time-picker, tabla de tratamientos, sync-button)
 ```
 
 ## Arquitectura
@@ -132,7 +138,7 @@ La protección está en **loaders**, no en componentes. La sesión de Zustand se
 - `auth.store.ts` persiste `{ token, usuario }` bajo la clave `dentalcare.auth` de `localStorage`.
 - Dos roles: **`medico`** (administrador, ve `/usuarios` y `/dashboard`) y **`asistente`** (trabaja sobre la agenda y los pacientes de un médico que elige).
 - El dashboard es solo del médico: sus métricas (ventas, dinero por cobrar) no deben verlas los asistentes. Se oculta del menú (`medicoOnly` en `AppLayout`) y la ruta redirige a `/agenda` con `requireMedico`. El backend responde `GET /user/dashboard` a cualquier usuario autenticado, pero filtra por el correo del token, así que un asistente nunca recibe los datos del médico.
-- El token dura 1 día. Ante un 401 fuera de `/auth`, el interceptor de Axios limpia la sesión y `AppLayout` redirige a `/login`.
+- El token dura 3 días. Ante un 401 fuera de `/auth`, el interceptor de Axios limpia la sesión y `AppLayout` redirige a `/login`.
 
 ### Reglas de dominio
 
@@ -145,6 +151,19 @@ La protección está en **loaders**, no en componentes. La sesión de Zustand se
 - **Dashboard**: una sola petición a `GET /user/dashboard?year=&month=`, que ya viene agregada. El mes y el año se eligen con segmentadores y viven en la URL.
 
 La interfaz y los formatos están en **español (es-MX)**. Usa los helpers de `clinic-data.ts` (`formatCurrency`, `formatLongDate`, …) para textos nuevos.
+
+### Modo sin conexión
+
+Si el consultorio se queda sin internet a media consulta, crear o editar citas, pacientes, tratamientos e historial clínico sigue funcionando: los cambios se guardan en el equipo y se envían solos al recuperar la conexión.
+
+- Cuando una mutación falla por falta de red (no por un error real del servidor), `saveOrQueue` (`lib/save-or-queue.ts`) la guarda en una cola persistida en `localStorage` (`store/offline.store.ts`, clave `dentalcare.offline`) y la pantalla actúa de inmediato como si se hubiera guardado. Los hooks de agenda, pacientes e historial clínico combinan esa cola con lo último que trajo el servidor en cada render (`lib/offline-queue.ts`), así que los cambios pendientes se ven al instante sin esperar respuesta.
+- Un paciente creado sin conexión recibe un id temporal (negativo) hasta que se sincroniza; su expediente nunca se pide al servidor mientras tanto. Al sincronizar, la URL de su expediente cambia sola al id real.
+- Antes de guardar una cita sin conexión se revisa contra lo que ya se conoce de esa agenda si el horario ya está ocupado (el backend no puede validarlo hasta que haya conexión): si choca, se avisa de inmediato en vez de descubrirlo minutos después al sincronizar.
+- Al recuperar la conexión (el evento `online` del navegador, o cada 15 s si no se sabe si ya volvió — útil cuando el que se cayó fue el servidor, no la red del equipo) se refrescan las pantallas y se reenvían los cambios pendientes en orden. Un cambio que ya no se puede aplicar (p. ej. el horario se ocupó mientras tanto) se descarta con un aviso explicando el motivo.
+- El botón de sincronización, arriba a la derecha en la Agenda, solo aparece mientras hay cambios sin sincronizar.
+- El token de sesión dura 3 días (antes 1), precisamente para tolerar una jornada sin conexión sin pedir volver a iniciar sesión.
+
+Detalle técnico completo (comportamiento ante race conditions, ids temporales, compactación de la cola) en `CLAUDE.md`.
 
 ## Convenciones de código
 
@@ -163,6 +182,3 @@ La interfaz y los formatos están en **español (es-MX)**. Usa los helpers de `c
 - `ENDPOINTS.md`: referencia completa del API (cuerpos, respuestas y errores).
 - `DASHBOARD.md`: contrato y cálculo de `GET /user/dashboard`.
 - `AGENTS.md`: guía para asistentes de código.
-
-
-femenino y masculino

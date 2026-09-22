@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/custom/confirm-dialog"
 import { NewAppointmentDialog } from "@/components/custom/new-appointment-dialog"
+import { SyncButton } from "@/components/custom/sync-button"
 import { useAgenda, type AgendaDay } from "@/hooks/useAgenda"
 import { useIsMobile } from "@/hooks/useMediaQuery"
 import { useNewAppointmentDialog } from "@/hooks/useNewAppointmentDialog"
@@ -184,7 +185,10 @@ export function AgendaView() {
             {closedDaysLabel() && ` El consultorio no atiende ${closedDaysLabel()}.`}
           </p>
         </div>
-        <NewAppointmentDialog />
+        <div className="flex items-center gap-2 max-sm:justify-end">
+          <SyncButton />
+          <NewAppointmentDialog />
+        </div>
       </div>
 
       {isAsistente && (

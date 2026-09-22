@@ -19,6 +19,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { useAuth } from "@/hooks/useAuth"
+import { useOfflineSync } from "@/hooks/useOfflineSync"
 import { cn } from "@/lib/utils"
 import type { Usuario } from "@/types/clinic"
 
@@ -53,6 +54,12 @@ export function AppLayout() {
   const { usuario, isAuthenticated, isMedico, logout } = useAuth()
   const navigate = useNavigate()
   const [drawerOpen, setDrawerOpen] = React.useState(false)
+
+  // Se monta una sola vez para toda la app: sincroniza los cambios sin
+  // conexión sin importar en qué pantalla esté el usuario cuando vuelve el
+  // internet (ver `useOfflineSync`; el botón de la agenda reutiliza el mismo
+  // hook solo para mostrar su estado).
+  useOfflineSync()
 
   const nav = NAV.filter((item) => !("medicoOnly" in item) || isMedico)
 

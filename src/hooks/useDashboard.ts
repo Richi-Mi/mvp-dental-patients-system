@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { useSearchParams } from "react-router"
 
 import { userActions } from "@/actions"
+import { isNetworkError } from "@/api/client"
 import {
   DASHBOARD_WHOLE_YEAR,
   dashboardYears,
@@ -53,7 +54,9 @@ export function useDashboard() {
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     isPlaceholderData: query.isPlaceholderData,
-    error: query.error,
+    // Sin conexión se siguen viendo las últimas cifras cargadas en vez de un
+    // error de fondo (ver el mismo criterio en `useAgenda`/`usePatients`).
+    error: isNetworkError(query.error) ? undefined : query.error,
     refetch: query.refetch,
   }
 }

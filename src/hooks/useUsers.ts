@@ -2,6 +2,7 @@ import * as React from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { userActions } from "@/actions"
+import { isNetworkError } from "@/api/client"
 import type { RegisterPayload, UpdateUsuarioPayload } from "@/api/types"
 import { queryKeys } from "@/lib/query-keys"
 import { useAuthStore } from "@/store/auth.store"
@@ -79,7 +80,7 @@ export function useUsers() {
 
     isLoading: listQuery.isLoading,
     isFetching: listQuery.isFetching,
-    error: listQuery.error,
+    error: isNetworkError(listQuery.error) ? undefined : listQuery.error,
     refetch: listQuery.refetch,
 
     createAssistant: createMutation.mutateAsync,

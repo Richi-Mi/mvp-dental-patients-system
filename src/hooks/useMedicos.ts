@@ -2,6 +2,7 @@ import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { userActions } from "@/actions"
+import { isNetworkError } from "@/api/client"
 import { queryKeys } from "@/lib/query-keys"
 import { useAuthStore } from "@/store/auth.store"
 import { useUiStore } from "@/store/ui.store"
@@ -21,7 +22,10 @@ export function useMedicos(enabled = true) {
   return {
     medicos: query.data ?? NO_MEDICOS,
     isLoading: query.isLoading,
-    error: query.error,
+    // Sin conexión se sigue usando la lista de médicos ya cargada (ver el
+    // mismo criterio en `useAgenda`/`usePatients`); si no hay ninguna en
+    // caché, `medicos` queda vacío y `MedicoPicker` lo explica sin esto.
+    error: isNetworkError(query.error) ? undefined : query.error,
   }
 }
 

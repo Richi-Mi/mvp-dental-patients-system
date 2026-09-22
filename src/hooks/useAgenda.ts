@@ -8,6 +8,7 @@ import {
 import { useSearchParams } from "react-router"
 
 import { citasActions } from "@/actions"
+import { isNetworkError } from "@/api/client"
 import type { CitasQuery } from "@/api/types"
 import {
     getISOWeek,
@@ -18,9 +19,13 @@ import {
     toISODateString,
     todayISO,
 } from "@/lib/clinic-data"
+import { agendaScope, applyToAppointments, citaIdFor, findConflict } from "@/lib/offline-queue"
 import { queryKeys } from "@/lib/query-keys"
+import { saveOrQueue } from "@/lib/save-or-queue"
+import { useAuthStore } from "@/store/auth.store"
 import type { Appointment, AppointmentInput } from "@/types/clinic"
 import { useActiveMedico } from "./useMedicos"
+import { useOwnPendingOperations } from "./useOwnPendingOperations"
 
 /** Parámetros de la URL que controla la agenda. */
 const AGENDA_PARAMS = ["year", "week", "day", "term"] as const
@@ -80,6 +85,10 @@ export type AgendaDay = {
  * Un asistente ve la agenda del médico que tenga elegido (ver
  * `useActiveMedico`): las peticiones van a `/citas/medico/:correo` en vez de
  * a `/citas`.
+ *
+ * Sin conexión, las mutaciones se guardan en la cola de `store/offline.store`
+ * (ver `lib/save-or-queue.ts`) y esta agenda las muestra de inmediato
+ * combinándolas con lo último que trajo el servidor (`applyToAppointments`).
  */
 export function useAgenda() {
     const [searchParams, setSearchParams] = useSearchParams()
@@ -168,6 +177,8 @@ export function useAgenda() {
     } = useActiveMedico()
 
     const queryClient = useQueryClient()
+    const owner = useAuthStore((s) => s.usuario?.correo)
+    const ownPending = useOwnPendingOperations()
 
     const params: CitasQuery = React.useMemo(() => {
         const term = search.trim()
@@ -181,10 +192,11 @@ export function useAgenda() {
         enabled: isReady,
     })
 
-    const appointments = React.useMemo(
-        () => [...(listQuery.data ?? [])].sort(sortByDateTime),
-        [listQuery.data],
-    )
+    const appointments = React.useMemo(() => {
+        const scope = agendaScope(owner ?? "", medicoEmail, params)
+        const merged = applyToAppointments(listQuery.data ?? [], ownPending, scope)
+        return [...merged].sort(sortByDateTime)
+    }, [listQuery.data, ownPending, owner, medicoEmail, params])
 
     /** Los 7 días de la semana, para resaltar el rango en el calendario. */
     const weekDates = React.useMemo(() => isoWeekDates(year, week), [year, week])
@@ -241,12 +253,48 @@ export function useAgenda() {
     )
 
     const createMutation = useMutation({
-        mutationFn: (input: AppointmentInput & { medicoEmail?: string | null }) => {
-            const { medicoEmail: destino, ...cita } = input
-            return citasActions.createAppointment(
-                cita,
-                destino === undefined ? medicoEmail : destino,
-            )
+        mutationFn: (
+            input: AppointmentInput & { medicoEmail?: string | null; patientName?: string },
+        ) => {
+            const { medicoEmail: destino, patientName, ...cita } = input
+            const target = destino === undefined ? medicoEmail : destino
+            const medicoCorreo = target ?? medicoActivo?.correo ?? owner ?? ""
+
+            return saveOrQueue({
+                send: () => citasActions.createAppointment(cita, target),
+                op: {
+                    type: "cita.create",
+                    citaId: citaIdFor(medicoCorreo, cita.date, cita.time),
+                    medicoCorreo,
+                    viaMedico: target != null,
+                    input: cita,
+                    subject: patientName ?? "",
+                },
+                // Sin conexión no hay servidor que rechace un horario ya
+                // ocupado (409 "Ya existe una cita registrada en ese
+                // horario"): se avisa aquí, contra lo que ya se conoce de esta
+                // agenda, para no encolar una cita que de todos modos no se
+                // va a poder crear. `validate` corre justo antes de encolar
+                // (offline de entrada, o porque el intento real acaba de
+                // fallar por red), así que cubre ambos casos.
+                validate: () => {
+                    const conflict = findConflict(appointments, cita.date, cita.time)
+                    if (conflict) {
+                        throw new Error(
+                            `Ya hay una cita a esa hora${conflict.patientName ? ` (${conflict.patientName})` : ""}. Elige otro horario.`,
+                        )
+                    }
+                },
+                optimistic: () => ({
+                    id: citaIdFor(medicoCorreo, cita.date, cita.time),
+                    patientId: cita.patientId,
+                    patientName: patientName ?? "",
+                    date: cita.date,
+                    time: cita.time,
+                    status: cita.status,
+                    motivo: cita.motivo,
+                }),
+            })
         },
         onSuccess: (appt) => {
             invalidate(appt.patientId)
@@ -254,8 +302,31 @@ export function useAgenda() {
     })
 
     const updateMutation = useMutation({
-        mutationFn: ({ id, input }: { id: string; input: Partial<AppointmentInput> }) =>
-            citasActions.updateAppointment(id, input),
+        mutationFn: ({ id, input }: { id: string; input: Partial<AppointmentInput> }) => {
+            const current = appointments.find((a) => a.id === id)
+
+            return saveOrQueue({
+                send: () => citasActions.updateAppointment(id, input),
+                op: { type: "cita.update", citaId: id, input, subject: current?.patientName ?? "" },
+                // Igual que al crear: solo aplica si de verdad mueve la cita
+                // de horario (ver el comentario en `createMutation`).
+                validate: () => {
+                    if (!current || (!input.date && !input.time)) return
+                    const date = input.date ?? current.date
+                    const time = input.time ?? current.time
+                    const conflict = findConflict(appointments, date, time, id)
+                    if (conflict) {
+                        throw new Error(
+                            `Ya hay una cita a esa hora${conflict.patientName ? ` (${conflict.patientName})` : ""}. Elige otro horario.`,
+                        )
+                    }
+                },
+                optimistic: () => {
+                    if (!current) throw new Error("Cita no encontrada")
+                    return { ...current, ...input }
+                },
+            })
+        },
         // Se espera al refetch: así la mutación no termina antes de que la
         // agenda tenga el dato nuevo y el selector de estatus no "regresa" un
         // instante al valor anterior.
@@ -263,7 +334,14 @@ export function useAgenda() {
     })
 
     const deleteMutation = useMutation({
-        mutationFn: (id: string) => citasActions.deleteAppointment(id),
+        mutationFn: (id: string) => {
+            const current = appointments.find((a) => a.id === id)
+            return saveOrQueue({
+                send: () => citasActions.deleteAppointment(id),
+                op: { type: "cita.delete", citaId: id, subject: current?.patientName ?? "" },
+                optimistic: () => ({ message: "Cita eliminada" }),
+            })
+        },
         onSuccess: () => {
             invalidate()
         },
@@ -303,7 +381,10 @@ export function useAgenda() {
         isLoading:
             listQuery.isLoading || (isAsistente && !isReady && isLoadingMedicos),
         isFetching: listQuery.isFetching,
-        error: listQuery.error,
+        // Sin conexión, un refetch de fondo que falla no debe tapar la agenda
+        // ya cargada (y, con los cambios pendientes, ya actualizada) con un
+        // error: para eso está el botón de sincronización.
+        error: isNetworkError(listQuery.error) ? undefined : listQuery.error,
         refetch: listQuery.refetch,
 
         createAppointment: createMutation.mutateAsync,

@@ -6,11 +6,21 @@ import {
 } from "@tanstack/react-query"
 
 import { pacientesActions } from "@/actions"
+import { isNetworkError } from "@/api/client"
+import {
+  applyToPatient,
+  applyToPatients,
+  isTempId,
+  newTempPatientId,
+  patientFromCreate,
+} from "@/lib/offline-queue"
 import { queryKeys } from "@/lib/query-keys"
+import { saveOrQueue } from "@/lib/save-or-queue"
 import { useAuthStore } from "@/store/auth.store"
 import { useUiStore } from "@/store/ui.store"
 import type { Patient, PatientInput, Treatment } from "@/types/clinic"
 import { useActiveMedico } from "./useMedicos"
+import { useOwnPendingOperations } from "./useOwnPendingOperations"
 
 /** Referencia estable para evitar recalcular memos en cada render. */
 const NO_PATIENTS: Patient[] = []
@@ -21,6 +31,11 @@ const NO_PATIENTS: Patient[] = []
  *
  * Un asistente no tiene pacientes propios: ve los del médico que tenga
  * elegido (`?correo_medico=`), el mismo de la agenda.
+ *
+ * Sin conexión, las mutaciones se guardan en la cola de `store/offline.store`
+ * (ver `lib/save-or-queue.ts`) y esta lista las combina de inmediato con lo
+ * último que trajo el servidor (`applyToPatients`), incluidas las altas, que
+ * quedan con un id temporal (negativo) hasta sincronizarse.
  */
 export function usePatients() {
   const search = useUiStore((s) => s.patientSearch)
@@ -28,6 +43,7 @@ export function usePatients() {
   const propio = useAuthStore((s) => s.usuario?.correo ?? null)
   const { medicoEmail, isReady } = useActiveMedico()
   const queryClient = useQueryClient()
+  const ownPending = useOwnPendingOperations()
 
   // A quién se asignan los pacientes nuevos: al médico elegido o a uno mismo.
   const correoMedico = medicoEmail ?? propio
@@ -38,7 +54,10 @@ export function usePatients() {
     enabled: isReady,
   })
 
-  const patients = listQuery.data ?? NO_PATIENTS
+  const patients = React.useMemo(
+    () => applyToPatients(listQuery.data ?? NO_PATIENTS, ownPending, correoMedico ?? ""),
+    [listQuery.data, ownPending, correoMedico],
+  )
 
   const filtered = React.useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -66,11 +85,22 @@ export function usePatients() {
     // (que filtra por el médico del token) no lo devolvería.
     mutationFn: (
       input: PatientInput & { birthDate: string; medicoEmail?: string | null },
-    ) =>
-      pacientesActions.createPatient({
-        medicoEmail: correoMedico,
-        ...input,
-      }),
+    ) => {
+      const { medicoEmail: override, ...rest } = input
+      const medicoCorreo = override ?? correoMedico ?? ""
+      const op = {
+        type: "paciente.create" as const,
+        patientId: newTempPatientId(),
+        medicoCorreo,
+        input: rest,
+        subject: rest.name,
+      }
+      return saveOrQueue({
+        send: () => pacientesActions.createPatient({ medicoEmail: correoMedico, ...input }),
+        op,
+        optimistic: () => patientFromCreate(op),
+      })
+    },
     onSuccess: (patient) => {
       // Se agrega al listado en el acto para que quien navegue de vuelta
       // (p. ej. el diálogo de nueva cita) ya lo encuentre seleccionable.
@@ -89,12 +119,33 @@ export function usePatients() {
     }: {
       id: number
       input: Partial<PatientInput> & { treatments?: Treatment[] }
-    }) => pacientesActions.updatePatient(id, input),
+    }) => {
+      const current = patients.find((p) => p.id === id)
+      return saveOrQueue({
+        send: () => pacientesActions.updatePatient(id, input),
+        op: { type: "paciente.update", patientId: id, input, subject: current?.name ?? "" },
+        optimistic: () => {
+          if (!current) throw new Error("Paciente no encontrado")
+          const { treatments, ...fields } = input
+          return { ...current, ...fields, treatments: treatments ?? current.treatments }
+        },
+      })
+    },
     onSuccess: (patient) => invalidate(patient.id),
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => pacientesActions.deletePatient(id),
+    mutationFn: (id: number) => {
+      const current = patients.find((p) => p.id === id)
+      return saveOrQueue({
+        send: () => pacientesActions.deletePatient(id),
+        op: { type: "paciente.delete", patientId: id, subject: current?.name ?? "" },
+        optimistic: () => {
+          if (!current) throw new Error("Paciente no encontrado")
+          return current
+        },
+      })
+    },
     onSuccess: (patient) => invalidate(patient.id),
   })
 
@@ -107,7 +158,9 @@ export function usePatients() {
     medicoEmail,
     isLoading: listQuery.isLoading,
     isFetching: listQuery.isFetching,
-    error: listQuery.error,
+    // Ver el comentario equivalente en `useAgenda`: sin conexión no se tapa
+    // la lista (ya al día con los cambios pendientes) con un error de fondo.
+    error: isNetworkError(listQuery.error) ? undefined : listQuery.error,
     refetch: listQuery.refetch,
 
     createPatient: createMutation.mutateAsync,
@@ -129,10 +182,17 @@ export function usePatients() {
  *
  * `PUT /pacientes/:id` **reemplaza** la lista de tratamientos completa, así
  * que las mutaciones de tratamientos parten siempre de la lista actual.
+ *
+ * Un paciente creado sin conexión tiene un id temporal (negativo, ver
+ * `isTempId`): nunca se pide al servidor (no existe ahí todavía) y su
+ * expediente sale por completo de la cola de cambios pendientes
+ * (`applyToPatient`).
  */
 export function usePatient(id: number | undefined) {
-  const enabled = typeof id === "number" && Number.isFinite(id)
+  const isTemp = typeof id === "number" && isTempId(id)
+  const enabled = typeof id === "number" && Number.isFinite(id) && !isTemp
   const queryClient = useQueryClient()
+  const ownPending = useOwnPendingOperations()
 
   const detailQuery = useQuery({
     queryKey: queryKeys.patients.detail(id ?? -1),
@@ -140,13 +200,16 @@ export function usePatient(id: number | undefined) {
     enabled,
   })
 
-  const patient = detailQuery.data
+  const patient = React.useMemo(
+    () => (id === undefined ? undefined : applyToPatient(detailQuery.data, id, ownPending)),
+    [detailQuery.data, id, ownPending],
+  )
 
   const onPatientChange = React.useCallback(() => {
-    if (!enabled) return
-    queryClient.invalidateQueries({ queryKey: queryKeys.patients.detail(id!) })
+    if (id === undefined) return
+    queryClient.invalidateQueries({ queryKey: queryKeys.patients.detail(id) })
     queryClient.invalidateQueries({ queryKey: queryKeys.patients.list() })
-  }, [enabled, id, queryClient])
+  }, [id, queryClient])
 
   /**
    * Envía la lista final completa: `PUT /pacientes/:id` reemplaza todos los
@@ -154,13 +217,32 @@ export function usePatient(id: number | undefined) {
    */
   const saveTreatmentsMutation = useMutation({
     mutationFn: (treatments: Treatment[]) =>
-      pacientesActions.updatePatient(id as number, { treatments }),
+      saveOrQueue({
+        send: () => pacientesActions.updatePatient(id as number, { treatments }),
+        op: {
+          type: "paciente.update",
+          patientId: id as number,
+          input: { treatments },
+          subject: patient?.name ?? "",
+        },
+        optimistic: () => {
+          if (!patient) throw new Error("Paciente no encontrado")
+          return { ...patient, treatments }
+        },
+      }),
     onSuccess: onPatientChange,
   })
 
   const updateMutation = useMutation({
     mutationFn: (input: Partial<PatientInput>) =>
-      pacientesActions.updatePatient(id as number, input),
+      saveOrQueue({
+        send: () => pacientesActions.updatePatient(id as number, input),
+        op: { type: "paciente.update", patientId: id as number, input, subject: patient?.name ?? "" },
+        optimistic: () => {
+          if (!patient) throw new Error("Paciente no encontrado")
+          return { ...patient, ...input }
+        },
+      }),
     onSuccess: onPatientChange,
   })
 
@@ -171,7 +253,7 @@ export function usePatient(id: number | undefined) {
     nextAppointment: patient?.upcoming?.[0],
     isLoading: detailQuery.isLoading,
     isFetching: detailQuery.isFetching,
-    error: detailQuery.error,
+    error: isNetworkError(detailQuery.error) ? undefined : detailQuery.error,
 
     updatePatient: updateMutation.mutateAsync,
     isUpdating: updateMutation.isPending,

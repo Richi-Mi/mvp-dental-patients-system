@@ -33,7 +33,7 @@ El token se obtiene al hacer login (`PUT /auth`) y se firma con el payload:
 { "correo": "usuario@correo.com", "tipo": "medico" }
 ```
 
-- Expira en **1 día** (`exp: "1d"`).
+- Expira en **3 días** (`exp: "3d"`).
 - Si el header `token` falta o el JWT es inválido/expiró, la API responde `401` con `{ "message": "Token inválido o expirado" }`.
 - Algunas rutas además requieren que `tipo` sea `"medico"` (ver columna **Rol** en cada tabla). Si el usuario autenticado no cumple el rol, responde `403` con `{ "message": "Acceso denegado: Se requiere medico y tienes <tipo_actual>" }`.
 

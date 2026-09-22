@@ -35,6 +35,7 @@ import {
 } from "@/lib/clinic-data"
 import { MOBILE_CARD } from "@/lib/responsive"
 import { cn } from "@/lib/utils"
+import { useOfflineStore } from "@/store/offline.store"
 
 export function PatientsEmptyView() {
   return (
@@ -67,6 +68,14 @@ export function PatientDetailView() {
     saveTreatmentsError,
   } = usePatient(Number.isFinite(patientId) ? patientId : undefined)
   const { deletePatient, isDeleting } = usePatients()
+
+  // El expediente de un paciente creado sin conexión vive en la URL con su id
+  // temporal (negativo); en cuanto se sincroniza y el servidor asigna el real
+  // (ver `useOfflineSync`), se cambia la URL sin dejar rastro en el historial.
+  const realId = useOfflineStore((s) => s.resolvedPatientIds[patientId])
+  React.useEffect(() => {
+    if (realId != null) navigate(`/pacientes/${realId}`, { replace: true })
+  }, [realId, navigate])
 
   if (isLoading) {
     return (

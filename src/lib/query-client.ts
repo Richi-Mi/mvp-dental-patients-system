@@ -6,6 +6,9 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
+      // Sin conexión los datos ya cargados siguen en pantalla: se conservan
+      // aunque nadie los use un rato (p. ej. al ir a Pacientes y volver).
+      gcTime: 24 * 60 * 60 * 1000,
       refetchOnWindowFocus: false,
       // Los 4xx del backend (401/403/404/409) no se resuelven reintentando.
       retry: (failureCount, error) => {
@@ -13,6 +16,12 @@ export const queryClient = new QueryClient({
         return failureCount < 2
       },
     },
-    mutations: { retry: false },
+    mutations: {
+      retry: false,
+      // Con el modo "online" (el de fábrica) una mutación sin conexión se
+      // queda en pausa y el formulario esperaría indefinidamente. Así corre
+      // siempre y `saveOrQueue` decide si guardarla en la cola sin conexión.
+      networkMode: "always",
+    },
   },
 })

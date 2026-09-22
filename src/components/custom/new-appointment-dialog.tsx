@@ -98,6 +98,9 @@ export function NewAppointmentDialog() {
             time: draft.time,
             status: draft.status,
             motivo: draft.motivo.trim() || "Consulta general",
+            // Solo se usa si la cita se guarda sin conexión (ver `useAgenda`):
+            // ahí no hay respuesta del servidor de la que tomar el nombre.
+            patientName: patients.find((p) => String(p.id) === draft.patientId)?.name,
         })
 
         resetDraft()

@@ -1,6 +1,7 @@
 import axios, { AxiosError, type AxiosInstance } from "axios"
 
 import { useAuthStore } from "@/store/auth.store"
+import { useOfflineStore } from "@/store/offline.store"
 
 export const API_URL: string =
   import.meta.env.VITE_API_URL ?? "http://localhost:3000"
@@ -17,12 +18,24 @@ export class ApiError extends Error {
 }
 
 /**
+ * Sin respuesta del servidor (`status` 0): no hay internet, el servidor no
+ * está disponible o se agotó el tiempo. Los cambios se guardan en la cola sin
+ * conexión (ver `saveOrQueue`).
+ */
+export function isNetworkError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 0
+}
+
+/**
  * The backend authenticates with a bare `token` header (not `Authorization`),
  * see ENDPOINTS.md § Autenticación.
  */
 export const api: AxiosInstance = axios.create({
   baseURL: API_URL,
   headers: { "Content-Type": "application/json" },
+  // Con una conexión que se queda colgada la petición falla aquí y el cambio
+  // pasa a la cola sin conexión, en vez de dejar el formulario "Guardando...".
+  timeout: 20_000,
 })
 
 api.interceptors.request.use((config) => {
@@ -45,10 +58,18 @@ function extractMessage(data: unknown, status: number): string {
 }
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    useOfflineStore.getState().setReachable(true)
+    return response
+  },
   (error: AxiosError) => {
     const status = error.response?.status ?? 0
     const message = extractMessage(error.response?.data, status)
+
+    // Cualquier respuesta, aunque sea un error, prueba que hay conexión.
+    if (!axios.isCancel(error)) {
+      useOfflineStore.getState().setReachable(status !== 0)
+    }
 
     // A 401 outside of the login/registro routes means the session expired.
     const url = error.config?.url ?? ""
