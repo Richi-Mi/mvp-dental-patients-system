@@ -13,13 +13,13 @@ export const STATUS_META: Record<
     label: "Confirmada",
     className: "border-transparent bg-primary/10 text-primary",
   },
-  pendiente: {
-    label: "Pendiente",
-    className: "border-transparent bg-amber-100 text-amber-700",
-  },
   completada: {
     label: "Completada",
     className: "border-transparent bg-emerald-100 text-emerald-700",
+  },
+  no_asistio: {
+    label: "No asistió",
+    className: "border-transparent bg-slate-200 text-slate-700",
   },
   cancelada: {
     label: "Cancelada",
@@ -39,6 +39,14 @@ export function formatCurrency(value: number): string {
     currency: "MXN",
     maximumFractionDigits: 0,
   }).format(value)
+}
+
+/** Fracción como porcentaje entero: `0.456` -> `"46%"`. */
+export function formatPercent(fraction: number): string {
+  return new Intl.NumberFormat("es-MX", {
+    style: "percent",
+    maximumFractionDigits: 0,
+  }).format(fraction)
 }
 
 /**
@@ -300,6 +308,244 @@ export function onlyOpenDays(dates: string[]): string[] {
   return dates.filter((date) => !isClosedDay(date))
 }
 
+// ---- Horario de atención ----
+
+/**
+ * Primera y última hora con atención (24 h). Es el único lugar donde se define
+ * el rango: de aquí salen las filas del horario semanal de la agenda y el
+ * rango que acepta el `TimePicker`. La última hora es un bloque completo, así
+ * que una cita de las 20:45 sigue estando en horario.
+ */
+export const OPENING_HOUR = 10
+export const CLOSING_HOUR = 20
+
+/** Las horas del horario, una por fila de la agenda: `[10, 11, … 20]`. */
+export const AGENDA_HOURS: readonly number[] = Array.from(
+  { length: CLOSING_HOUR - OPENING_HOUR + 1 },
+  (_, i) => OPENING_HOUR + i,
+)
+
+/** `10` -> `"10:00"`. */
+export function hourLabel(hour: number): string {
+  return `${String(hour).padStart(2, "0")}:00`
+}
+
+/** La hora (0–23) de un `HH:mm`, o `null` si no se puede leer. */
+export function hourOf(time: string): number | null {
+  const hour = Number.parseInt(time.slice(0, 2), 10)
+  return Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : null
+}
+
+// ---- Duración de las citas ----
+
+/** Minutos que dura una cita nueva mientras no se elija otra hora de fin. */
+export const DEFAULT_APPOINTMENT_MINUTES = 60
+
+/**
+ * Última hora (0–23) que acepta la hora de fin: una cita del último bloque
+ * (hasta las 20:59) ya termina dentro de la hora siguiente.
+ */
+export const LAST_END_HOUR = CLOSING_HOUR + 1
+
+/** `HH:mm` -> minutos desde la medianoche, o `null` si no se puede leer. */
+export function timeToMinutes(time: string): number | null {
+  const match = /^(\d{2}):(\d{2})/.exec(time)
+  if (!match) return null
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  return hours <= 23 && minutes <= 59 ? hours * 60 + minutes : null
+}
+
+/** Minutos desde la medianoche -> `HH:mm`, sin salirse del día (00:00–23:59). */
+export function minutesToTime(minutes: number): string {
+  const clamped = Math.min(Math.max(Math.round(minutes), 0), 24 * 60 - 1)
+  const hours = String(Math.floor(clamped / 60)).padStart(2, "0")
+  return `${hours}:${String(clamped % 60).padStart(2, "0")}`
+}
+
+/** Hora de fin por defecto de una cita que empieza a `time`. */
+export function defaultEndTime(time: string): string {
+  const start = timeToMinutes(time) ?? OPENING_HOUR * 60
+  return minutesToTime(start + DEFAULT_APPOINTMENT_MINUTES)
+}
+
+/**
+ * Hora de fin cuando la cita pasa de empezar a `start` a empezar a
+ * `nextStart`: conserva su duración (la de por defecto si no era válida), sin
+ * pasar de la última hora de fin (`LAST_END_HOUR`).
+ */
+export function shiftEndTime(start: string, end: string, nextStart: string): string {
+  const from = timeToMinutes(start)
+  const to = timeToMinutes(end)
+  const duration =
+    from !== null && to !== null && to > from ? to - from : DEFAULT_APPOINTMENT_MINUTES
+  const next = timeToMinutes(nextStart) ?? OPENING_HOUR * 60
+  return minutesToTime(Math.min(next + duration, LAST_END_HOUR * 60 + 59))
+}
+
+/** `"10:00 - 11:00"`. */
+export function formatTimeRange(start: string, end: string): string {
+  return `${start} - ${end}`
+}
+
+export type HourSlot = {
+  hour: number
+  /** Las citas que empiezan dentro de esa hora, ordenadas por minuto. */
+  items: Appointment[]
+}
+
+/**
+ * Reparte las citas de un día en los bloques de una hora del horario
+ * (`AGENDA_HOURS`), en ese mismo orden. Un bloque puede quedarse vacío o
+ * acumular varias citas (10:15 y 10:45 caen las dos en el de las 10:00).
+ *
+ * Las citas fuera del horario —registradas antes de fijar el rango, o por un
+ * `time` que no se puede leer— se devuelven aparte en vez de forzarlas a una
+ * fila que no les toca, igual que `outOfWeek` hace con los días.
+ */
+export function groupByHour(appointments: Appointment[]): {
+  slots: HourSlot[]
+  outOfHours: Appointment[]
+} {
+  const slots: HourSlot[] = AGENDA_HOURS.map((hour) => ({ hour, items: [] }))
+  const byHour = new Map(slots.map((slot) => [slot.hour, slot.items]))
+  const outOfHours: Appointment[] = []
+
+  for (const appt of appointments) {
+    const hour = hourOf(appt.time)
+    const bucket = hour === null ? undefined : byHour.get(hour)
+    if (bucket) bucket.push(appt)
+    else outOfHours.push(appt)
+  }
+
+  for (const slot of slots) slot.items.sort((a, b) => a.time.localeCompare(b.time))
+  outOfHours.sort((a, b) => a.time.localeCompare(b.time))
+  return { slots, outOfHours }
+}
+
+/**
+ * Un bloque del horario semanal. `hour` e `items` son los de su hora, más las
+ * citas de las horas siguientes que se le unen por empezar justo cuando
+ * termina (ver `layoutDay`).
+ */
+export type ScheduleBlock = HourSlot & {
+  /** Fila del horario en que empieza (0 = la de `OPENING_HOUR`). */
+  row: number
+  /** Filas que ocupa: hasta la hora en que termina la última de sus citas. */
+  rowSpan: number
+  /** Carril dentro del día (0 = el primero), para las citas que se enciman. */
+  lane: number
+  /** Carriles que abarca: se extiende sobre los vecinos que tenga libres. */
+  laneSpan: number
+}
+
+export type DayLayout = {
+  /** Todas las horas del horario, como en `groupByHour`. */
+  slots: HourSlot[]
+  /** Las horas que tienen citas, ya acomodadas en la cuadrícula. */
+  blocks: ScheduleBlock[]
+  /** Carriles del día: más de uno solo si hay citas que se enciman. */
+  lanes: number
+  /** Una posición por hora de `AGENDA_HOURS`: `true` si alguna cita la ocupa. */
+  busy: boolean[]
+  outOfHours: Appointment[]
+}
+
+/**
+ * Filas que ocupa una cita que empieza en la fila `row`: todas las horas que
+ * toca hasta su fin, redondeando a horas completas (de 10:30 a 11:15 ocupa la
+ * de las 10 y la de las 11). Mínimo una, y la última fila del horario es el
+ * tope. Una hora de fin ilegible o que no es posterior al inicio cuenta como
+ * una sola fila.
+ */
+function rowSpanOf(appointment: Appointment, row: number): number {
+  const start = timeToMinutes(appointment.time)
+  const end = timeToMinutes(appointment.endTime)
+  const endRow =
+    start !== null && end !== null && end > start
+      ? Math.ceil(end / 60) - OPENING_HOUR
+      : row + 1
+  return Math.min(Math.max(endRow, row + 1), AGENDA_HOURS.length) - row
+}
+
+/**
+ * Minuto (desde la medianoche) en que termina una cita que empieza en la hora
+ * `hour`. Una hora de fin ilegible o que no es posterior al inicio cuenta hasta
+ * el final de esa hora, igual que `rowSpanOf` la cuenta como una sola fila.
+ */
+function endMinuteOf(appointment: Appointment, hour: number): number {
+  const start = timeToMinutes(appointment.time)
+  const end = timeToMinutes(appointment.endTime)
+  return start !== null && end !== null && end > start ? end : (hour + 1) * 60
+}
+
+/**
+ * Acomoda un día en el horario semanal a partir de `groupByHour`: cada hora
+ * con citas es un bloque que ocupa de su fila hasta la hora en que termina la
+ * última de ellas, así que su alto es proporcional a la duración.
+ *
+ * Si un bloque empieza mientras otro sigue ocupado (una cita de 10:00 a 12:00
+ * y otra a las 11:00), van en carriles distintos, uno junto al otro; cada
+ * bloque se extiende sobre los carriles vecinos que tenga libres en sus horas.
+ * El traslape se mide en minutos: si dos bloques comparten una fila pero no se
+ * enciman (uno termina a las 11:30 y el otro empieza a las 11:30), el segundo
+ * se une al primero y sus citas quedan apiladas en el mismo carril.
+ */
+export function layoutDay(appointments: Appointment[]): DayLayout {
+  const { slots, outOfHours } = groupByHour(appointments)
+  const blocks: ScheduleBlock[] = []
+  // Último bloque de cada carril y el minuto en que termina su última cita.
+  const laneTails: { block: ScheduleBlock; end: number }[] = []
+
+  slots.forEach((slot, row) => {
+    if (slot.items.length === 0) return
+    const rowSpan = Math.max(...slot.items.map((appt) => rowSpanOf(appt, row)))
+    // Vienen ordenadas por minuto: la primera es la que empieza antes.
+    const start = timeToMinutes(slot.items[0].time) ?? slot.hour * 60
+    const end = Math.max(...slot.items.map((appt) => endMinuteOf(appt, slot.hour)))
+
+    // Primer carril libre en esta fila o cuya última cita ya terminó.
+    const lane = laneTails.findIndex(
+      (tail) => tail.block.row + tail.block.rowSpan <= row || tail.end <= start,
+    )
+    const tail = laneTails[lane]
+    if (tail && tail.block.row + tail.block.rowSpan > row) {
+      // Comparten fila sin encimarse: se apilan en el bloque que ya estaba.
+      tail.block.items.push(...slot.items)
+      tail.block.rowSpan = Math.max(tail.block.rowSpan, row + rowSpan - tail.block.row)
+      tail.end = Math.max(tail.end, end)
+      return
+    }
+
+    const index = lane === -1 ? laneTails.length : lane
+    // Copia de las citas: si otro bloque se le une, `slots` no cambia.
+    const block = { ...slot, items: [...slot.items], row, rowSpan, lane: index, laneSpan: 1 }
+    blocks.push(block)
+    laneTails[index] = { block, end }
+  })
+
+  const lanes = Math.max(laneTails.length, 1)
+  const overlap = (a: ScheduleBlock, b: ScheduleBlock) =>
+    a.row < b.row + b.rowSpan && b.row < a.row + a.rowSpan
+
+  for (const block of blocks) {
+    let next = block.lane + 1
+    while (
+      next < lanes &&
+      !blocks.some((other) => other.lane === next && overlap(block, other))
+    ) {
+      next++
+    }
+    block.laneSpan = next - block.lane
+  }
+
+  const busy = AGENDA_HOURS.map((_, row) =>
+    blocks.some((block) => row >= block.row && row < block.row + block.rowSpan),
+  )
+
+  return { slots, blocks, lanes, busy, outOfHours }
+}
+
 /** Las 7 fechas (`yyyy-mm-dd`, lunes a domingo) de una semana ISO. */
 export function isoWeekDates(year: number, week: number): string[] {
   const monday = startOfISOWeek(year, week)
@@ -457,6 +703,35 @@ export function salesSeries(ventasPorMes: number[]) {
 /** Serie mensual de citas para la gráfica, desde `citasPorMes` del backend. */
 export function appointmentsSeries(citasPorMes: number[]) {
   return MONTHS_SHORT.map((mes, i) => ({ mes, citas: citasPorMes[i] ?? 0 }))
+}
+
+/**
+ * Rebanadas del pastel de estatus del dashboard, en orden fijo para que cada
+ * una conserve su color aunque otra quede en cero. "No asistió" y "Cancelada"
+ * van juntas.
+ */
+export const STATUS_SLICES = [
+  "completada",
+  "confirmada",
+  "no_asistio_cancelada",
+] as const
+
+export type StatusSlice = (typeof STATUS_SLICES)[number]
+
+/** `fill` apunta al color que define el `ChartConfig` de cada rebanada. */
+export function appointmentStatusSeries(
+  counts: Record<AppointmentStatus, number>,
+) {
+  const citas: Record<StatusSlice, number> = {
+    completada: counts.completada,
+    confirmada: counts.confirmada,
+    no_asistio_cancelada: counts.no_asistio + counts.cancelada,
+  }
+  return STATUS_SLICES.map((estatus) => ({
+    estatus,
+    citas: citas[estatus],
+    fill: `var(--color-${estatus})`,
+  }))
 }
 
 /** Primer año con datos del consultorio: el dashboard ofrece de aquí al año en curso. */

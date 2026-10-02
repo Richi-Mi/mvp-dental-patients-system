@@ -16,6 +16,15 @@ export const ENDPOINTS = {
   pacientes: {
     root: "/pacientes",
     byId: (id: number) => `/pacientes/${id}`,
+    /** `GET` lista las fotos; `POST` sube imágenes (multipart, campo `fotos`). */
+    fotos: (id: number) => `/pacientes/${id}/fotos`,
+    /** `DELETE` elimina la foto. Para descargarla se usa la `url` que manda el API. */
+    foto: (id: number, nombre: string) =>
+      `/pacientes/${id}/fotos/${encodeURIComponent(nombre)}`,
+  },
+  /** `GET` lee y `PUT` guarda los ajustes del médico autenticado. */
+  ajustes: {
+    root: "/ajustes",
   },
   /** `POST` crea y `PUT` actualiza; se consulta dentro de `GET /pacientes/:id`. */
   historial: {
@@ -27,5 +36,8 @@ export const ENDPOINTS = {
     /** Agenda de otro médico: la usa un asistente (GET lista, POST agenda). */
     byMedico: (correo: string) =>
       `/citas/medico/${encodeURIComponent(correo)}`,
+    /** Una cita de otro médico: un asistente la edita (PUT) o la borra (DELETE). */
+    byMedicoId: (correo: string, id: string) =>
+      `/citas/medico/${encodeURIComponent(correo)}/${encodeURIComponent(id)}`,
   },
 } as const

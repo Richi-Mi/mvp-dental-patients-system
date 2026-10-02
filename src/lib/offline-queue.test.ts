@@ -82,7 +82,7 @@ describe("dependsOnTempPatient / resolvePatientIds", () => {
       citaId: "x",
       medicoCorreo: OWNER,
       viaMedico: false,
-      input: { patientId: -5, date: "2026-09-21", time: "10:00", status: "pendiente", motivo: "" },
+      input: { patientId: -5, date: "2026-09-21", time: "10:00", endTime: "11:00", status: "no_asistio", motivo: "" },
       subject: "Nuevo paciente",
     })
     expect(dependsOnTempPatient(op)).toBe(true)
@@ -118,7 +118,7 @@ describe("dependsOnTempPatient / resolvePatientIds", () => {
       citaId,
       medicoCorreo: OWNER,
       viaMedico: false,
-      input: { patientId: 1, date: "2026-09-21", time: "10:00", status: "pendiente", motivo: "" },
+      input: { patientId: 1, date: "2026-09-21", time: "10:00", endTime: "11:00", status: "no_asistio", motivo: "" },
       subject: "Ana",
     })
     const update = pending({ type: "cita.update", citaId, input: { motivo: "Otro" }, subject: "Ana" })
@@ -137,7 +137,7 @@ describe("dependsOnTempPatient / resolvePatientIds", () => {
         citaId,
         medicoCorreo: OWNER,
         viaMedico: false,
-        input: { patientId: 1, date: "2026-09-21", time: "10:00", status: "pendiente", motivo: "" },
+        input: { patientId: 1, date: "2026-09-21", time: "10:00", endTime: "11:00", status: "no_asistio", motivo: "" },
         subject: "Ana",
       },
       { owner: "otro@gmail.com" },
@@ -153,7 +153,7 @@ describe("dependsOnTempPatient / resolvePatientIds", () => {
       citaId: "a",
       medicoCorreo: OWNER,
       viaMedico: false,
-      input: { patientId: -5, date: "2026-09-21", time: "10:00", status: "pendiente", motivo: "" },
+      input: { patientId: -5, date: "2026-09-21", time: "10:00", endTime: "11:00", status: "no_asistio", motivo: "" },
       subject: "",
     })
     const other = pending({ type: "paciente.delete", patientId: 99, subject: "" })
@@ -171,7 +171,7 @@ describe("addOperation: citas", () => {
       citaId: citaIdFor(OWNER, "2026-09-21", "10:00"),
       medicoCorreo: OWNER,
       viaMedico: false,
-      input: { patientId: 1, date: "2026-09-21", time: "10:00", status: "pendiente", motivo: "Limpieza" },
+      input: { patientId: 1, date: "2026-09-21", time: "10:00", endTime: "11:00", status: "no_asistio", motivo: "Limpieza" },
       subject: "Ana",
     })
     const update = pending({
@@ -195,7 +195,7 @@ describe("addOperation: citas", () => {
       citaId,
       medicoCorreo: OWNER,
       viaMedico: false,
-      input: { patientId: 1, date: "2026-09-21", time: "10:00", status: "pendiente", motivo: "" },
+      input: { patientId: 1, date: "2026-09-21", time: "10:00", endTime: "11:00", status: "no_asistio", motivo: "" },
       subject: "Ana",
     })
     const update = pending({
@@ -227,7 +227,7 @@ describe("addOperation: citas", () => {
       citaId,
       medicoCorreo: OWNER,
       viaMedico: false,
-      input: { patientId: 1, date: "2026-09-21", time: "10:00", status: "pendiente", motivo: "" },
+      input: { patientId: 1, date: "2026-09-21", time: "10:00", endTime: "11:00", status: "no_asistio", motivo: "" },
       subject: "Ana",
     })
     const del = pending({ type: "cita.delete", citaId, subject: "Ana" })
@@ -328,7 +328,8 @@ describe("findConflict", () => {
     patientName: "José Ricardo",
     date: "2026-09-22",
     time: "10:00",
-    status: "pendiente",
+    endTime: "11:00",
+    status: "no_asistio",
     motivo: "",
   }
 
@@ -356,7 +357,7 @@ describe("applyToAppointments", () => {
       citaId: "nueva",
       medicoCorreo: OWNER,
       viaMedico: false,
-      input: { patientId: 1, date: "2026-09-21", time: "10:00", status: "pendiente", motivo: "Limpieza" },
+      input: { patientId: 1, date: "2026-09-21", time: "10:00", endTime: "11:00", status: "no_asistio", motivo: "Limpieza" },
       subject: "Ana",
     })
 
@@ -372,7 +373,7 @@ describe("applyToAppointments", () => {
       citaId: "nueva",
       medicoCorreo: "otro-medico@gmail.com",
       viaMedico: true,
-      input: { patientId: 1, date: "2026-09-21", time: "10:00", status: "pendiente", motivo: "" },
+      input: { patientId: 1, date: "2026-09-21", time: "10:00", endTime: "11:00", status: "no_asistio", motivo: "" },
       subject: "Ana",
     })
 
@@ -386,7 +387,8 @@ describe("applyToAppointments", () => {
       patientName: "Ana",
       date: "2026-09-21",
       time: "10:00",
-      status: "pendiente",
+      endTime: "11:00",
+      status: "no_asistio",
       motivo: "",
     }
     const update = pending({
@@ -399,6 +401,30 @@ describe("applyToAppointments", () => {
     expect(applyToAppointments([existing], [update], scope)).toEqual([])
   })
 
+  test("reasignar el paciente de una cita también cambia el nombre que se muestra", () => {
+    const existing: Appointment = {
+      id: "c1",
+      patientId: 1,
+      patientName: "Ana",
+      date: "2026-09-21",
+      time: "10:00",
+      endTime: "11:00",
+      status: "no_asistio",
+      motivo: "",
+    }
+    const update = pending({
+      type: "cita.update",
+      citaId: "c1",
+      input: { patientId: 2 },
+      subject: "Luis",
+    })
+
+    expect(applyToAppointments([existing], [update], scope)[0]).toMatchObject({
+      patientId: 2,
+      patientName: "Luis",
+    })
+  })
+
   test("borra una cita existente", () => {
     const existing: Appointment = {
       id: "c1",
@@ -406,12 +432,79 @@ describe("applyToAppointments", () => {
       patientName: "Ana",
       date: "2026-09-21",
       time: "10:00",
-      status: "pendiente",
+      endTime: "11:00",
+      status: "no_asistio",
       motivo: "",
     }
     const del = pending({ type: "cita.delete", citaId: "c1", subject: "Ana" })
 
     expect(applyToAppointments([existing], [del], scope)).toEqual([])
+  })
+
+  test("un alta encolada antes de existir la hora de fin dura una hora", () => {
+    const legacy = pending({
+      type: "cita.create",
+      citaId: "vieja",
+      medicoCorreo: OWNER,
+      viaMedico: false,
+      // Así quedó guardada en `localStorage`: sin `endTime`.
+      input: { patientId: 1, date: "2026-09-21", time: "10:30", status: "confirmada", motivo: "" } as never,
+      subject: "Ana",
+    })
+
+    const [result] = applyToAppointments([], [legacy], scope)
+    expect(result.endTime).toBe("11:30")
+  })
+
+  test("un estatus encolado que ya no existe (el antiguo «pendiente») se muestra como no asistió", () => {
+    const existing: Appointment = {
+      id: "c1",
+      patientId: 1,
+      patientName: "Ana",
+      date: "2026-09-21",
+      time: "10:00",
+      endTime: "11:00",
+      status: "confirmada",
+      motivo: "",
+    }
+    const create = pending({
+      type: "cita.create",
+      citaId: "nueva",
+      medicoCorreo: OWNER,
+      viaMedico: false,
+      input: { patientId: 1, date: "2026-09-22", time: "10:00", endTime: "11:00", status: "pendiente" as never, motivo: "" },
+      subject: "Ana",
+    })
+    const update = pending({ type: "cita.update", citaId: "c1", input: { status: "pendiente" as never }, subject: "Ana" })
+
+    const result = applyToAppointments([existing], [create, update], scope)
+    expect(result.map((a) => a.status)).toEqual(["no_asistio", "no_asistio"])
+  })
+
+  test("mover una cita sin indicar la hora de fin conserva su duración", () => {
+    const existing: Appointment = {
+      id: "c1",
+      patientId: 1,
+      patientName: "Ana",
+      date: "2026-09-21",
+      time: "10:00",
+      endTime: "11:30",
+      status: "confirmada",
+      motivo: "",
+    }
+    const moved = pending({ type: "cita.update", citaId: "c1", input: { time: "12:00" }, subject: "Ana" })
+    const resized = pending({
+      type: "cita.update",
+      citaId: "c1",
+      input: { time: "12:00", endTime: "12:30" },
+      subject: "Ana",
+    })
+
+    expect(applyToAppointments([existing], [moved], scope)[0]).toMatchObject({
+      time: "12:00",
+      endTime: "13:30",
+    })
+    expect(applyToAppointments([existing], [resized], scope)[0].endTime).toBe("12:30")
   })
 
   test("un cambio de nombre del paciente se refleja en sus citas ya listadas", () => {
@@ -421,7 +514,8 @@ describe("applyToAppointments", () => {
       patientName: "Ana",
       date: "2026-09-21",
       time: "10:00",
-      status: "pendiente",
+      endTime: "11:00",
+      status: "no_asistio",
       motivo: "",
     }
     const rename = pending({ type: "paciente.update", patientId: 1, input: { name: "Ana López" }, subject: "Ana" })
@@ -487,7 +581,7 @@ describe("applyToPatient", () => {
       citaId: "f1",
       medicoCorreo: OWNER,
       viaMedico: false,
-      input: { patientId: 1, date: "2026-09-21", time: "10:00", status: "pendiente", motivo: "" },
+      input: { patientId: 1, date: "2026-09-21", time: "10:00", endTime: "11:00", status: "no_asistio", motivo: "" },
       subject: "Ana",
     })
     const past = pending({
@@ -495,7 +589,7 @@ describe("applyToPatient", () => {
       citaId: "p1",
       medicoCorreo: OWNER,
       viaMedico: false,
-      input: { patientId: 1, date: "2026-01-01", time: "10:00", status: "pendiente", motivo: "" },
+      input: { patientId: 1, date: "2026-01-01", time: "10:00", endTime: "11:00", status: "no_asistio", motivo: "" },
       subject: "Ana",
     })
 
@@ -544,6 +638,11 @@ describe("describeOperation", () => {
     const other = { type: "cita.update", citaId: "c1", input: { motivo: "Otro" }, subject: "Ana" }
     expect(describeOperation(status)).toContain("Estatus")
     expect(describeOperation(other)).not.toContain("Estatus")
+  })
+
+  test("un estatus que ya no existe (el antiguo «pendiente») se describe como «No asistió»", () => {
+    const legacy = { type: "cita.update", citaId: "c1", input: { status: "pendiente" as never }, subject: "Ana" }
+    expect(describeOperation(legacy)).toBe("Estatus «No asistió» en la cita de Ana")
   })
 
   test("un paciente sin nombre todavía es legible", () => {

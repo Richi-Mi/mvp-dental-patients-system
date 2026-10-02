@@ -37,6 +37,7 @@ function toCitaPayload(input: Partial<AppointmentInput>): UpdateCitaPayload {
   if (input.date && input.time) {
     payload.fecha_cita = toISODateTime(input.date, input.time)
   }
+  if (input.endTime !== undefined) payload.horaFin = input.endTime
   if (input.motivo !== undefined) payload.motivo = input.motivo
   if (input.status !== undefined) payload.estatus = input.status
   return payload
@@ -62,20 +63,37 @@ export async function createAppointment(
   return toAppointment(data)
 }
 
-/** `PUT /citas/:id` */
+/**
+ * `PUT /citas/:id`
+ *
+ * Con `medicoEmail` usa `PUT /citas/medico/:correo/:id`: la cita es de ese
+ * médico, que es como un asistente edita la agenda ajena.
+ */
 export async function updateAppointment(
   id: string,
   input: Partial<AppointmentInput>,
+  medicoEmail?: string | null,
 ): Promise<Appointment> {
-  const { data } = await api.put<CitaDTO>(
-    ENDPOINTS.citas.byId(id),
-    toCitaPayload(input),
-  )
+  const url = medicoEmail
+    ? ENDPOINTS.citas.byMedicoId(medicoEmail, id)
+    : ENDPOINTS.citas.byId(id)
+  const { data } = await api.put<CitaDTO>(url, toCitaPayload(input))
   return toAppointment(data)
 }
 
-/** `DELETE /citas/:id` — borrado físico. */
-export async function deleteAppointment(id: string): Promise<MessageResponse> {
-  const { data } = await api.delete<MessageResponse>(ENDPOINTS.citas.byId(id))
+/**
+ * `DELETE /citas/:id` — borrado físico.
+ *
+ * Con `medicoEmail` usa `DELETE /citas/medico/:correo/:id` (un asistente
+ * borra una cita del médico).
+ */
+export async function deleteAppointment(
+  id: string,
+  medicoEmail?: string | null,
+): Promise<MessageResponse> {
+  const url = medicoEmail
+    ? ENDPOINTS.citas.byMedicoId(medicoEmail, id)
+    : ENDPOINTS.citas.byId(id)
+  const { data } = await api.delete<MessageResponse>(url)
   return data
 }

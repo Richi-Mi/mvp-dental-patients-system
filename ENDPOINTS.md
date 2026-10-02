@@ -13,8 +13,10 @@ Backend de consultorio dental construido con [Elysia](https://elysiajs.com/) sob
 - [`/auth`](#auth)
 - [`/user`](#user)
 - [`/pacientes`](#pacientes)
+- [`/pacientes/:id/fotos`](#pacientesidfotos)
 - [`/citas`](#citas)
 - [`/historial`](#historial)
+- [`/ajustes`](#ajustes)
 - [Ruta no encontrada](#ruta-no-encontrada)
 
 ---
@@ -43,15 +45,15 @@ Todas las rutas comparten el mismo formato de error: `{ "message": string }`.
 
 | Código | Cuándo ocurre |
 |---|---|
-| `400` | Error de validación de query/params (`code: "VALIDATION"` genérico de Elysia; los `body` inválidos normalmente devuelven `422`, ver nota abajo). |
+| `400` | El controlador rechaza la petición por una regla de negocio que el esquema no puede expresar (`CustomError`), p. ej. una `horaFin` que no es posterior a la hora de inicio de la cita, una carga de fotos que dejaría al paciente con más de 5, o un archivo que no es una imagen válida. |
 | `401` | Token ausente, inválido o expirado; o credenciales de login incorrectas. |
 | `403` | El usuario autenticado no tiene el rol requerido (`authRole("medico")`). |
 | `404` | El recurso solicitado no existe (paciente, usuario, cita, médico referenciado, etc.), o la ruta no coincide con ninguna definida. |
 | `409` | Conflicto: correo ya registrado, cita duplicada para el mismo médico/horario, o paciente que ya tiene historial clínico. |
-| `422` | El `body`/`headers`/`query` no cumple el esquema (`t.Object(...)`) declarado por la ruta — validación nativa de Elysia/TypeBox, ocurre **antes** de llegar al controlador. |
+| `422` | El `body`, la `query` o los `params` no cumplen el esquema (`t.Object(...)`) de la ruta: falta un campo requerido, un valor tiene otro tipo o está fuera de rango… Lo valida Elysia/TypeBox **antes** de llegar al controlador. |
 | `500` | Error no controlado. |
 
-> Nota: la mayoría de errores de validación de **body** que arma Elysia internamente devuelven `422` con un cuerpo detallado (`type`, `on`, `summary`, `expected`, `found`, …), distinto al `{ message }` simple de `CustomError`.
+> Nota: el `message` de un `422` es el texto que el esquema define para ese campo (p. ej. `"El mes debe ser un número entre 1 y 12"`). Si el campo no define uno, Elysia pone en `message` el detalle de la validación como JSON en texto (`type`, `on`, `property`, `summary`, `expected`, `found`, …).
 
 ## Modelos de datos
 
@@ -97,7 +99,7 @@ Formas de salida más comunes (ya sin `password` y con relaciones aplanadas). Lo
 {
   id: string,            // generado por el backend: `${id_paciente}-${fecha(YYYY-MM-DD)}`
   fecha: Date,
-  nombre: string,
+  nombre: string,        // "SIN_MOTIVO" si se registró sin nombre (solo importes); el frontend lo muestra vacío
   costo: number | null,
   cuenta: number | null,
   id_paciente: number
@@ -109,12 +111,24 @@ Formas de salida más comunes (ya sin `password` y con relaciones aplanadas). Lo
 {
   id: string,             // generado por el backend: `${correo_medico}_${fecha_cita.toISOString()}`
   fecha_cita: Date,
+  horaFin: string,        // "HH:MM" (24 h) en el reloj del consultorio (ver nota)
   motivo: string,
   estatus: string,
   correo_medico: string,
   id_paciente: number,
   medico?: Usuario,
   paciente?: Paciente
+}
+```
+
+> `fecha_cita` es un instante (ISO en UTC), pero `horaFin` es la hora a la que termina la cita en el reloj del consultorio (`ZONA_HORARIA` del backend, por defecto `America/Mexico_City`), que es en el que el frontend muestra ambas: `fecha_cita: "2026-09-10T16:00:00.000Z"` con `horaFin: "11:30"` es una cita de 10:00 a 11:30. Siempre es posterior a la hora de inicio (una cita no cruza la medianoche). Las citas anteriores a esta columna quedaron de una hora.
+
+> `estatus` es texto libre para el backend (`varchar(50)`); el cliente maneja `confirmada`, `completada`, `no_asistio` y `cancelada` (`AppointmentStatus`), y cualquier otro valor (incluido el antiguo `pendiente`) lo muestra como `no_asistio` («No asistió»). Si el médico activó el autocompletado (`/ajustes`), el backend cambia solo las `confirmada` a `completada` 24 h después de su `fecha_cita`.
+
+**Ajustes**
+```ts
+{
+  autocompletarCitas: boolean   // false si el médico nunca guardó sus ajustes
 }
 ```
 
@@ -131,6 +145,18 @@ Formas de salida más comunes (ya sin `password` y con relaciones aplanadas). Lo
 ```
 
 > Los textos de las preguntas viven en el frontend (`CLINICAL_HISTORY_QUESTIONS` en `src/lib/clinic-data.ts`); el backend solo guarda las respuestas. La pregunta 10 (embarazo) solo se muestra a pacientes de sexo femenino, pero el backend no lo valida.
+
+**Foto**
+```ts
+{
+  img_name: string,      // PK y nombre del archivo: `${id_paciente}_${UUID v7}.webp`
+  fecha_subida: string,  // ISO; las fotos de una misma carga comparten la fecha
+  id_paciente: number,
+  url: string            // ruta del API que devuelve la imagen: /pacientes/:id/fotos/:img_name
+}
+```
+
+> `url` exige el header `token` como cualquier otra ruta, así que no sirve directo en un `<img src>`: el frontend descarga la imagen con Axios (`responseType: "blob"`) y la muestra con un object URL (`PhotoImage`).
 
 ---
 
@@ -329,7 +355,7 @@ Obtiene un paciente activo, su lista de tratamientos y sus próximas citas.
   "...": "...resto de campos de Paciente...",
   "medico": { "correo": "medico@gmail.com", "...": "..." },
   "tratamientos": [ { "id": "1-2026-09-10", "nombre": "Limpieza", "costo": 500, "cuenta": 0, "fecha": "2026-09-10", "id_paciente": 1 } ],
-  "proximasCitas": [ { "id": "medico@gmail.com_2026-09-15T15:00:00.000Z", "fecha_cita": "2026-09-15T15:00:00.000Z", "motivo": "Revisión", "estatus": "pendiente" } ],
+  "proximasCitas": [ { "id": "medico@gmail.com_2026-09-15T15:00:00.000Z", "fecha_cita": "2026-09-15T15:00:00.000Z", "horaFin": "10:00", "motivo": "Revisión", "estatus": "confirmada" } ],
   "historialClinico": { "id_paciente": 1, "historial": { "pregunta_1": "No", "pregunta_2": null, "...": "...", "pregunta_10": null } }
 }
 ```
@@ -351,13 +377,13 @@ Crea un paciente nuevo.
 | `sexo` | `string` | Sí | |
 | `cp` | `string \| null` | No | Dato de contacto (ver nota abajo). |
 | `direccion` | `string \| null` | No | Dato de contacto. |
-| `fecha_nacimiento` | `string` (`YYYY-MM-DD`) | Sí | Si falta o no es una fecha válida, `400` con `{ message }`. |
+| `fecha_nacimiento` | `string` (`YYYY-MM-DD`) | Sí | Si falta o no es una fecha válida, `422` con `{ message }`. |
 | `correo` | `string \| null` | No | Dato de contacto. |
 | `telefono` | `string \| null` | No | Dato de contacto. |
 | `notas` | `string` | No | |
 | `correo_medico` | `string` | No | Correo de un `Usuario` existente; si se envía y no existe, `404`. Si se omite, el paciente queda sin médico asignado. |
 
-> **Datos de contacto:** omitir un campo, mandarlo en `null` o como `""` (o solo espacios) es equivalente: se guarda como `null`, y los strings se guardan sin espacios al inicio ni al final. Si los cuatro quedan en `null`, el paciente se crea **sin** registro de contacto. Un valor que no sea `string` ni `null` responde `400`.
+> **Datos de contacto:** omitir un campo, mandarlo en `null` o como `""` (o solo espacios) es equivalente: se guarda como `null`, y los strings se guardan sin espacios al inicio ni al final. Si los cuatro quedan en `null`, el paciente se crea **sin** registro de contacto. Un valor que no sea `string` ni `null` responde `422`.
 
 - **Respuesta `201`:** objeto `Paciente` creado.
 - **Errores:** `404` si `correo_medico` no corresponde a ningún usuario; `422` si faltan campos requeridos.
@@ -384,9 +410,11 @@ Cada elemento de `tratamientos`:
 | Campo | Tipo | Requerido |
 |---|---|---|
 | `fecha` | `string` (fecha ISO) | Sí |
-| `nombre` | `string` | Sí |
+| `nombre` | `string \| null` | No |
 | `costo` | `number \| null` | No |
 | `cuenta` | `number \| null` | No |
+
+> **Tratamiento sin nombre:** si `nombre` se omite, es `null` o viene en blanco, el backend lo guarda como `"SIN_MOTIVO"`, siempre que traiga `costo` o `cuenta` (un `0` cuenta como dato). Sin nombre ni importes responde `400`. El nombre se guarda sin espacios al inicio ni al final.
 
 > **Semántica de `tratamientos`:** si el campo viene en el body (aunque sea `[]`), el backend **borra todos** los tratamientos guardados del paciente y **crea de nuevo** los que vienen en el arreglo (no hace merge por id). Es decir, el cliente debe mandar la lista completa y final que quiere que quede guardada: si trae el arreglo completo obtenido de `GET /pacientes/:id`, editado/con altas/bajas, el servidor sincroniza exactamente a ese estado. Si el campo `tratamientos` se omite del body, los tratamientos existentes no se tocan.
 
@@ -402,7 +430,7 @@ Cada elemento de `tratamientos`:
 ```
 
 - **Respuesta `200`:** objeto `Paciente` actualizado (incluye `tratamientos` solo si se envió ese campo).
-- **Errores:** `404` si el paciente o el `correo_medico` no existen.
+- **Errores:** `404` si el paciente o el `correo_medico` no existen. `400` si un tratamiento no trae nombre, `costo` ni `cuenta` (`"Un tratamiento sin nombre debe tener costo o a cuenta"`); en ese caso no se guarda ningún cambio.
 
 ### `DELETE /pacientes/:id`
 
@@ -413,6 +441,66 @@ Baja lógica del paciente (`isActive = false`); **no** borra el registro.
 - **Params:** `id` (`number`).
 - **Respuesta `200`:** objeto `Paciente` con `isActive: false`.
 - **Errores:** `404` si el paciente no existe.
+
+---
+
+## `/pacientes/:id/fotos`
+
+Fotos de un paciente. Todas las rutas requieren header `token` y sirven para cualquier rol. El backend convierte cada imagen a **WebP al 75%** con el lado más largo en **2560 px** como máximo (nunca la agranda), y un paciente tiene como **máximo 5** fotos. Detalles de almacenamiento y formatos en el README del backend ("Fotos de pacientes").
+
+### `GET /pacientes/:id/fotos`
+
+Lista las fotos del paciente en el orden en que se subieron (las de una misma carga, en el orden en que se eligieron).
+
+- **Auth:** sí.
+- **Headers:** `token: <jwt>`.
+- **Params:** `id` (`number`).
+- **Respuesta `200`:** `Foto[]` (vacío si no tiene).
+- **Errores:** `404` si el paciente no existe o está inactivo.
+
+### `POST /pacientes/:id/fotos`
+
+Sube de 1 a 5 imágenes. Es **todo o nada**: si una no es válida, o si con ellas el paciente pasaría de 5 fotos, no se guarda ninguna.
+
+- **Auth:** sí.
+- **Headers:** `token: <jwt>`. El cuerpo es `multipart/form-data` (sin `Content-Type: application/json`).
+- **Params:** `id` (`number`).
+- **Body (`multipart/form-data`):**
+
+| Campo | Tipo | Requerido | Notas |
+|---|---|---|---|
+| `fotos` | `File` (repetido) | Sí | De 1 a 5 archivos de hasta 20 MB cada uno. JPEG, PNG, WebP, GIF (solo el primer cuadro) o BMP; HEIC, AVIF y TIFF no se aceptan. |
+
+```bash
+curl -H "token: $TOKEN" -F "fotos=@frente.jpg" -F "fotos=@perfil.png" http://localhost:3000/pacientes/1/fotos
+```
+
+- **Respuesta `201`:** `Foto[]` con las fotos creadas.
+- **Errores:**
+  - `422` sin archivos, con más de 5 o con uno de más de 20 MB: `{ "message": "Envía de 1 a 5 imágenes de hasta 20 MB cada una" }`.
+  - `400` si el paciente pasaría de 5 fotos, p. ej. `{ "message": "El paciente ya tiene 4 imágenes: solo puedes subir 1 más (máximo 5)." }`.
+  - `400` si un archivo no es una imagen válida en un formato aceptado (el mensaje dice cuál), o si pasa de 120 megapíxeles.
+  - `404` si el paciente no existe o está inactivo.
+
+### `GET /pacientes/:id/fotos/:nombre`
+
+Devuelve la imagen (la `url` de cada `Foto`).
+
+- **Auth:** sí.
+- **Headers:** `token: <jwt>`.
+- **Params:** `id` (`number`), `nombre` (`img_name` de la foto).
+- **Respuesta `200`:** la imagen, `Content-Type: image/webp`, con `Cache-Control: private, max-age=31536000, immutable` (el contenido de un nombre nunca cambia).
+- **Errores:** `404` si la foto no existe o es de otro paciente; `422` si `nombre` no tiene la forma de un `img_name`.
+
+### `DELETE /pacientes/:id/fotos/:nombre`
+
+Elimina la foto y su archivo.
+
+- **Auth:** sí.
+- **Headers:** `token: <jwt>`.
+- **Params:** `id` (`number`), `nombre` (`img_name`).
+- **Respuesta `200`:** la `Foto` eliminada.
+- **Errores:** `404` si la foto no existe o es de otro paciente; `422` si `nombre` no tiene la forma de un `img_name`.
 
 ---
 
@@ -439,7 +527,7 @@ Lista las citas del médico autenticado, agrupadas por día y ordenadas por hora
 ```json
 {
   "2026-09-10": [
-    { "id": "medico@gmail.com_2026-09-10T09:00:00.000Z", "fecha_cita": "2026-09-10T09:00:00.000Z", "motivo": "Revisión", "estatus": "pendiente", "paciente": { "...": "..." } }
+    { "id": "medico@gmail.com_2026-09-10T16:00:00.000Z", "fecha_cita": "2026-09-10T16:00:00.000Z", "horaFin": "11:00", "motivo": "Revisión", "estatus": "confirmada", "paciente": { "...": "..." } }
   ],
   "2026-09-11": [ "..." ]
 }
@@ -457,15 +545,16 @@ Crea una nueva cita para el médico autenticado.
 |---|---|---|
 | `id_paciente` | `number` | Sí |
 | `fecha_cita` | `string` (fecha/hora ISO) | Sí |
+| `horaFin` | `string` (`HH:MM`, 24 h) | No — si se omite, la cita dura una hora. |
 | `motivo` | `string` | Sí |
 | `estatus` | `string` | Sí |
 
 ```json
-{ "id_paciente": 1, "fecha_cita": "2026-09-10T15:00:00.000Z", "motivo": "Revisión", "estatus": "pendiente" }
+{ "id_paciente": 1, "fecha_cita": "2026-09-10T15:00:00.000Z", "horaFin": "10:30", "motivo": "Revisión", "estatus": "confirmada" }
 ```
 
 - **Respuesta `201`:** objeto `Cita` creado (`id` generado por el backend).
-- **Errores:** `404` si el paciente no existe o está inactivo; `409` si el médico ya tiene una cita registrada exactamente en ese horario.
+- **Errores:** `422` si `horaFin` no tiene el formato `HH:MM`; `400` si no es posterior a la hora de inicio; `404` si el paciente no existe o está inactivo; `409` si el médico ya tiene una cita registrada exactamente en ese horario.
 
 ### `GET /citas/medico/:correo`
 
@@ -485,11 +574,32 @@ Crea una cita **a nombre del médico indicado en la URL**, no del usuario autent
 - **Auth:** sí. **Rol:** cualquiera.
 - **Headers:** `token: <jwt>`.
 - **Params:** `correo` (`string`) — mismo criterio de validación que arriba.
-- **Body:** idéntico al de `POST /citas` (`id_paciente`, `fecha_cita`, `motivo`, `estatus`).
+- **Body:** idéntico al de `POST /citas` (`id_paciente`, `fecha_cita`, `horaFin`, `motivo`, `estatus`).
 - **Respuesta `201`:** objeto `Cita` creado (su `id` se compone con el correo del médico de la URL).
-- **Errores:** `404` si el médico o el paciente no existen; `409` si ese médico ya tiene una cita en ese horario.
+- **Errores:** `422` o `400` por `horaFin`, igual que en `POST /citas`; `404` si el médico o el paciente no existen; `409` si ese médico ya tiene una cita en ese horario.
 
-> Nota: `PUT /citas/:id` y `DELETE /citas/:id` siguen filtrando por el médico del token, así que un asistente no puede editar ni borrar citas ajenas (responden `404`).
+### `PUT /citas/medico/:correo/:id`
+
+Actualiza una cita **del médico indicado en la URL**, no del usuario autenticado. Es la ruta con la que un asistente edita (o cambia el estatus de) una cita de la agenda que consulta.
+
+- **Auth:** sí. **Rol:** cualquiera.
+- **Headers:** `token: <jwt>`.
+- **Params:** `correo` (`string`, mismo criterio de validación que arriba) e `id` (`string`, el id compuesto de la cita).
+- **Body:** idéntico al de `PUT /citas/:id`.
+- **Respuesta `200`:** objeto `Cita` actualizado.
+- **Errores:** los de `PUT /citas/:id`; `404` si el médico no existe o la cita no pertenece a ese médico.
+
+### `DELETE /citas/medico/:correo/:id`
+
+Elimina **físicamente** una cita del médico indicado en la URL (la ruta con la que un asistente borra citas de la agenda que consulta).
+
+- **Auth:** sí. **Rol:** cualquiera.
+- **Headers:** `token: <jwt>`.
+- **Params:** `correo` e `id`, como en la ruta anterior.
+- **Respuesta `200`:** `{ "message": "Cita eliminada" }`.
+- **Errores:** `404` si el médico no existe o la cita no pertenece a ese médico.
+
+> Nota: `PUT /citas/:id` y `DELETE /citas/:id` siguen filtrando por el médico del token; un asistente debe usar las rutas `/citas/medico/:correo/:id` (en `/citas/:id` responderían `404`).
 
 ### `PUT /citas/:id`
 
@@ -504,11 +614,12 @@ Actualiza una cita existente del médico autenticado. Todos los campos son opcio
 |---|---|---|
 | `id_paciente` | `number` | No — si se envía, reasigna el paciente de la cita. |
 | `fecha_cita` | `string` (fecha/hora ISO) | No |
+| `horaFin` | `string` (`HH:MM`, 24 h) | No — si se cambia `fecha_cita` sin enviarla, la cita conserva su duración. |
 | `motivo` | `string` | No |
 | `estatus` | `string` | No |
 
 - **Respuesta `200`:** objeto `Cita` actualizado.
-- **Errores:** `404` si la cita no existe o no pertenece al médico autenticado; `404` si el nuevo `id_paciente` no existe/está inactivo.
+- **Errores:** `422` si `horaFin` no tiene el formato `HH:MM`; `400` si no queda después de la hora de inicio (la nueva, si también cambia `fecha_cita`); `404` si la cita no existe o no pertenece al médico autenticado; `404` si el nuevo `id_paciente` no existe/está inactivo.
 
 ### `DELETE /citas/:id`
 
@@ -542,7 +653,7 @@ Crea el historial clínico de un paciente.
 | `id_paciente` | `number` | Sí | Paciente activo. |
 | `historial` | `object` | Sí | Respuestas `pregunta_1` … `pregunta_10`, cada una `string \| null` y opcional. Puede ir vacío (`{}`). |
 
-> **Respuestas:** una pregunta omitida, en `null` o como `""` (o solo espacios) queda sin responder (`null`); los textos se guardan sin espacios al inicio ni al final. Las claves que no son del cuestionario se ignoran. Un valor que no sea `string` ni `null` responde `400`.
+> **Respuestas:** una pregunta omitida, en `null` o como `""` (o solo espacios) queda sin responder (`null`); los textos se guardan sin espacios al inicio ni al final. Las claves que no son del cuestionario se ignoran. Un valor que no sea `string` ni `null` responde `422`.
 
 ```json
 { "id_paciente": 1, "historial": { "pregunta_1": "No", "pregunta_3": "Penicilina" } }
@@ -571,6 +682,43 @@ Actualiza el historial clínico de un paciente. Actualización parcial por pregu
 
 - **Respuesta `200`:** objeto `HistorialClinico` actualizado, con las 10 preguntas.
 - **Errores:** `404` si el paciente no tiene historial clínico.
+
+---
+
+## `/ajustes`
+
+Ajustes del médico autenticado que viven en el servidor. Todas las rutas requieren header `token` y rol `medico`. El tamaño de letra de la pantalla Ajustes **no** está aquí: se guarda en el navegador.
+
+### `GET /ajustes`
+
+- **Auth:** sí. **Rol:** `medico`.
+- **Headers:** `token: <jwt>`.
+- **Respuesta `200`:** objeto `Ajustes`. Si el médico nunca los guardó, los valores por defecto (`{ "autocompletarCitas": false }`).
+- **Errores:** `401` sin token válido; `403` si no es médico.
+
+### `PUT /ajustes`
+
+Guarda los ajustes del médico. Un campo omitido no cambia.
+
+- **Auth:** sí. **Rol:** `medico`.
+- **Headers:** `token: <jwt>`.
+- **Body:**
+
+| Campo | Tipo | Requerido | Notas |
+|---|---|---|---|
+| `autocompletarCitas` | `boolean` | No | Activo: las citas `confirmada` cuya `fecha_cita` fue hace más de 24 h pasan a `completada`. Las de otro estatus no se tocan. |
+
+```json
+{ "autocompletarCitas": true }
+```
+
+- **Respuesta `200`:** `Ajustes` más `citasCompletadas`, las citas que se completaron al guardar (0 si quedó desactivado):
+```json
+{ "autocompletarCitas": true, "citasCompletadas": 12 }
+```
+- **Errores:** `401` sin token válido; `403` si no es médico; `422` si `autocompletarCitas` no es booleano (`"autocompletarCitas debe ser true o false"`).
+
+> Al activarlo, el backend completa en ese momento **todas** las citas confirmadas vencidas del médico, también las antiguas; después lo repite al arrancar el servidor y cada hora. Desactivarlo no deshace nada.
 
 ---
 

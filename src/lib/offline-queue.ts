@@ -10,11 +10,13 @@ import type { CitasQuery } from "@/api/types"
 import {
   CLINICAL_HISTORY_QUESTIONS,
   STATUS_META,
+  defaultEndTime,
   formatLongDate,
   isoWeekDates,
+  shiftEndTime,
   todayISO,
 } from "@/lib/clinic-data"
-import { toISODateTime, toLocalISODate } from "@/lib/mappers"
+import { normalizeStatus, toISODateTime, toLocalISODate } from "@/lib/mappers"
 import type {
   Appointment,
   AppointmentInput,
@@ -38,8 +40,19 @@ export type OfflineOperation =
       viaMedico: boolean
       input: AppointmentInput
     }
-  | { type: "cita.update"; citaId: string; input: Partial<AppointmentInput> }
-  | { type: "cita.delete"; citaId: string }
+  | {
+      type: "cita.update"
+      citaId: string
+      /** Si existe, la cita es de ese médico: `PUT /citas/medico/:correo/:id` (un asistente). */
+      medicoCorreo?: string
+      input: Partial<AppointmentInput>
+    }
+  | {
+      type: "cita.delete"
+      citaId: string
+      /** Si existe, la cita es de ese médico: `DELETE /citas/medico/:correo/:id` (un asistente). */
+      medicoCorreo?: string
+    }
   | {
       type: "paciente.create"
       /** Id temporal (negativo) mientras el servidor no asigne el real. */
@@ -219,14 +232,18 @@ export function addOperation(
           o.citaId === op.citaId,
       )
       if (!target) return [...queue, op]
+      // El nombre del paciente es el del cambio nuevo (pudo reasignarse), pero
+      // un cambio que no lo trae (p. ej. solo el estatus) no debe borrarlo.
+      const subject = op.subject || target.subject
+
       if (target.type === "cita.create") {
         const input = { ...target.input, ...defined(op.input) }
         const citaId = citaIdFor(target.medicoCorreo, input.date, input.time)
-        return [...without(target), { ...target, input, citaId }]
+        return [...without(target), { ...target, subject, input, citaId }]
       }
       return [
         ...without(target),
-        { ...target, input: { ...target.input, ...defined(op.input) } },
+        { ...target, subject, input: { ...target.input, ...defined(op.input) } },
       ]
     }
 
@@ -311,7 +328,11 @@ export function appointmentFromCreate(
     patientName: op.subject,
     date: op.input.date,
     time: op.input.time,
-    status: op.input.status,
+    // Las altas que se encolaron antes de existir la hora de fin no la traen.
+    endTime: op.input.endTime ?? defaultEndTime(op.input.time),
+    // La cola se guarda en `localStorage`: puede traer estatus que el cliente
+    // ya no maneja (el antiguo "pendiente").
+    status: normalizeStatus(op.input.status),
     motivo: op.input.motivo,
   }
 }
@@ -320,7 +341,15 @@ export function applyAppointmentChanges(
   appointment: Appointment,
   input: Partial<AppointmentInput>,
 ): Appointment {
-  return { ...appointment, ...defined(input) }
+  const next = { ...appointment, ...defined(input) }
+  // Como en el backend, mover la cita sin indicar la hora de fin conserva su
+  // duración (p. ej. un cambio encolado antes de existir la hora de fin).
+  if (input.time !== undefined && input.endTime === undefined) {
+    next.endTime = shiftEndTime(appointment.time, appointment.endTime, input.time)
+  }
+  // Igual que en `appointmentFromCreate`: un estatus encolado puede ser antiguo.
+  if (input.status !== undefined) next.status = normalizeStatus(input.status)
+  return next
 }
 
 export function patientFromCreate(
@@ -444,7 +473,13 @@ export function applyToAppointments(
       case "cita.update":
         result = result.flatMap((a) => {
           if (a.id !== op.citaId) return [a]
-          const next = applyAppointmentChanges(a, op.input)
+          const changes = applyAppointmentChanges(a, op.input)
+          // Si el cambio reasignó al paciente, su nombre viene en `subject`:
+          // el de la cita sigue siendo el de antes.
+          const next =
+            changes.patientId !== a.patientId && op.subject
+              ? { ...changes, patientName: op.subject }
+              : changes
           const moved = next.date !== a.date
           return moved && !inScope(next) ? [] : [next]
         })
@@ -581,7 +616,7 @@ export function describeOperation(op: NewOperation): string {
     case "cita.update": {
       const { status, ...rest } = defined(op.input)
       return status && Object.keys(rest).length === 0
-        ? `Estatus «${STATUS_META[status].label}» en la cita de ${who}`
+        ? `Estatus «${STATUS_META[normalizeStatus(status)].label}» en la cita de ${who}`
         : `Cambios en la cita de ${who}`
     }
     case "cita.delete":
@@ -598,6 +633,6 @@ export function describeOperation(op: NewOperation): string {
       return `Baja de ${who}`
     case "historial.create":
     case "historial.update":
-      return `Historial clínico de ${who}`
+      return `Historia clínica de ${who}`
   }
 }

@@ -67,10 +67,18 @@ function toRows(treatments: Treatment[]): Row[] {
   }))
 }
 
-/** Filas con nombre, ya normalizadas a números para el backend. */
+/**
+ * Filas a guardar, ya normalizadas a números para el backend. Una fila sin
+ * tratamiento se guarda si tiene costo o a cuenta (el backend la registra como
+ * "SIN_MOTIVO"); solo se descartan las filas vacías del todo. Se mira el texto
+ * capturado y no el importe: `toRows` deja en "0" los importes guardados, así
+ * que toda fila que viene del servidor se conserva.
+ */
 function toTreatments(rows: Row[]): Treatment[] {
   return rows
-    .filter((row) => row.tratamiento.trim() !== "")
+    .filter((row) =>
+      [row.tratamiento, row.costo, row.aCuenta].some((value) => value.trim() !== ""),
+    )
     .map((row) => ({
       id: row.key,
       fecha: row.fecha,

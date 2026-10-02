@@ -14,7 +14,7 @@ import type { DashboardMetrics, Usuario } from "@/types/clinic"
 /**
  * `GET /user/dashboard` — métricas ya agregadas por el backend, de un año o de
  * un mes de ese año. Sin `year` responde con el año actual y sin `month` con
- * todo el año; fuera de 2000–2100 o de 1–12 devuelve 400.
+ * todo el año; fuera de 2000–2100 o de 1–12 devuelve 422.
  */
 export async function getDashboard(
   query: DashboardQuery = {},

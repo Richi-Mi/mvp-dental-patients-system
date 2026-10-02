@@ -28,9 +28,9 @@ import { cn } from "@/lib/utils"
 import type { Patient } from "@/types/clinic"
 
 /**
- * Historial clínico del paciente. Sin historial muestra "Crear historial"; con
- * historial lo muestra en lectura con "Editar". Crear y editar usan el mismo
- * formulario dentro del diálogo.
+ * Historia clínica del paciente (botón "Historia Clínica"). Sin historial
+ * muestra "Crear historia clínica"; con historial lo muestra en lectura con
+ * "Editar". Crear y editar usan el mismo formulario dentro del diálogo.
  */
 export function ClinicalHistoryDialog({ patient }: { patient: Patient }) {
   const [open, setOpen] = React.useState(false)
@@ -47,10 +47,10 @@ export function ClinicalHistoryDialog({ patient }: { patient: Patient }) {
   const questions = clinicalQuestionsFor(patient.gender)
 
   const title = !editing
-    ? "Historial clínico"
+    ? "Historia clínica"
     : clinicalHistory
-      ? "Editar historial clínico"
-      : "Crear historial clínico"
+      ? "Editar historia clínica"
+      : "Crear historia clínica"
 
   return (
     <Dialog
@@ -65,7 +65,7 @@ export function ClinicalHistoryDialog({ patient }: { patient: Patient }) {
         render={
           <Button size="sm" variant="outline">
             <FileHeart data-icon="inline-start" />
-            Historial
+            Historia Clínica
           </Button>
         }
       />
@@ -82,19 +82,19 @@ export function ClinicalHistoryDialog({ patient }: { patient: Patient }) {
         {isLoading ? (
           <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
-            Cargando historial...
+            Cargando historia clínica...
           </div>
         ) : error ? (
           <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {error instanceof Error
               ? error.message
-              : "No se pudo cargar el historial clínico."}
+              : "No se pudo cargar la historia clínica."}
           </p>
         ) : editing ? (
           <ClinicalHistoryForm
             questions={questions}
             initialAnswers={clinicalHistory}
-            submitLabel={clinicalHistory ? "Guardar cambios" : "Crear historial"}
+            submitLabel={clinicalHistory ? "Guardar cambios" : "Crear historia clínica"}
             isSaving={isCreating || isUpdating}
             onSubmit={async (answers) => {
               await (clinicalHistory
@@ -138,15 +138,15 @@ export function ClinicalHistoryDialog({ patient }: { patient: Patient }) {
               <EmptyMedia variant="icon">
                 <FileHeart />
               </EmptyMedia>
-              <EmptyTitle>Sin historial clínico</EmptyTitle>
+              <EmptyTitle>Sin historia clínica</EmptyTitle>
               <EmptyDescription>
-                Este paciente todavía no tiene un historial clínico registrado.
+                Este paciente todavía no tiene una historia clínica registrada.
               </EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
               <Button size="sm" onClick={() => setEditing(true)}>
                 <Plus data-icon="inline-start" />
-                Crear historial
+                Crear historia clínica
               </Button>
             </EmptyContent>
           </Empty>

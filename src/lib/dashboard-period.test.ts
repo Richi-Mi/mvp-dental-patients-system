@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import {
+  appointmentStatusSeries,
   dashboardYears,
   formatDashboardPeriod,
   readDashboardPeriod,
@@ -79,6 +80,7 @@ describe("toDashboard", () => {
     pacientesTotales: 10,
     ventasPorMes: [0, 0, 0, 0, 0, 0, 0, 1000, 3200.5, 0, 0, 0],
     citasPorMes: [0, 0, 0, 0, 0, 0, 0, 3, 5, 0, 0, 0],
+    citasPorEstatus: { confirmada: 2, completada: 2, pendiente: 1 },
   }
 
   test("mapea el mes y los pacientes nuevos", () => {
@@ -90,5 +92,47 @@ describe("toDashboard", () => {
 
   test("month null = todo el año", () => {
     expect(toDashboard({ ...base, month: null }).month).toBeNull()
+  })
+
+  test("agrupa los estatus como la agenda: el antiguo pendiente cuenta como no asistió", () => {
+    const metrics = toDashboard({
+      ...base,
+      citasPorEstatus: { confirmada: 2, " Completada ": 1, completada: 1, pendiente: 1 },
+    })
+    expect(metrics.citasPorEstatus).toEqual({
+      confirmada: 2,
+      completada: 2,
+      no_asistio: 1,
+      cancelada: 0,
+    })
+  })
+
+  test("sin desglose del backend, todos los estatus en cero", () => {
+    expect(toDashboard({ ...base, citasPorEstatus: undefined }).citasPorEstatus).toEqual({
+      confirmada: 0,
+      completada: 0,
+      no_asistio: 0,
+      cancelada: 0,
+    })
+  })
+})
+
+describe("appointmentStatusSeries", () => {
+  test("tres rebanadas en orden fijo; no asistió y canceladas juntas", () => {
+    const series = appointmentStatusSeries({
+      confirmada: 3,
+      completada: 0,
+      no_asistio: 1,
+      cancelada: 2,
+    })
+    expect(series).toEqual([
+      { estatus: "completada", citas: 0, fill: "var(--color-completada)" },
+      { estatus: "confirmada", citas: 3, fill: "var(--color-confirmada)" },
+      {
+        estatus: "no_asistio_cancelada",
+        citas: 3,
+        fill: "var(--color-no_asistio_cancelada)",
+      },
+    ])
   })
 })

@@ -50,7 +50,7 @@ export function ClinicalHistoryForm({
       setError(
         err instanceof Error
           ? err.message
-          : "No se pudo guardar el historial clínico.",
+          : "No se pudo guardar la historia clínica.",
       )
     }
   }

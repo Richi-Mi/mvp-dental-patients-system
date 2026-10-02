@@ -121,7 +121,9 @@ export async function runSync(queryClient: QueryClient): Promise<void> {
   if (discarded.length > 0) {
     toast.error(
       `No se pudieron aplicar ${discarded.length === 1 ? "1 cambio" : `${discarded.length} cambios`}: ${discarded.join("; ")}.`,
-      { duration: 10_000 },
+      // Se queda hasta que el usuario lo cierre con la "x": son cambios
+      // perdidos (p. ej. citas que no se crearon) y debe alcanzar a leerlo.
+      { duration: Infinity, closeButton: true },
     )
   }
 

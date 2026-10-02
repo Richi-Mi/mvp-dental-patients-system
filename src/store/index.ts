@@ -1,6 +1,8 @@
 export { useAuthStore, isAuthenticated, AUTH_STORAGE_KEY } from "./auth.store"
 export { useOfflineStore, OFFLINE_STORAGE_KEY } from "./offline.store"
 export { useUiStore } from "./ui.store"
+export { usePreferencesStore, PREFERENCES_STORAGE_KEY } from "./preferences.store"
 export type { AuthState } from "./auth.store"
 export type { OfflineState } from "./offline.store"
 export type { UiState, AppointmentDraft } from "./ui.store"
+export type { PreferencesState } from "./preferences.store"

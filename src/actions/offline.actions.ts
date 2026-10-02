@@ -21,10 +21,10 @@ export async function sendOperation(op: OfflineOperation): Promise<number | void
       await createAppointment(op.input, op.viaMedico ? op.medicoCorreo : null)
       return
     case "cita.update":
-      await updateAppointment(op.citaId, op.input)
+      await updateAppointment(op.citaId, op.input, op.medicoCorreo)
       return
     case "cita.delete":
-      await deleteAppointment(op.citaId)
+      await deleteAppointment(op.citaId, op.medicoCorreo)
       return
     case "paciente.create": {
       const patient = await createPatient({ ...op.input, medicoEmail: op.medicoCorreo })

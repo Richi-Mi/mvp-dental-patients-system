@@ -8,6 +8,7 @@ import { LoginView } from "@/pages/LoginView"
 import { PatientDetailView, PatientsEmptyView } from "@/pages/PatientDetailView"
 import { PatientFormView } from "@/pages/PatientFormView"
 import { PatientsView } from "@/pages/PatientsView"
+import { SettingsView } from "@/pages/SettingsView"
 import { UsersView } from "@/pages/UsersView"
 import { isAuthenticated, isMedico } from "@/store/auth.store"
 
@@ -46,6 +47,8 @@ export const routes: RouteObject[] = [
       // Métricas del médico: un asistente no debe verlas.
       { path: "dashboard", loader: requireMedico, Component: DashboardView },
       { path: "usuarios", loader: requireMedico, Component: UsersView },
+      // Por ahora los ajustes son solo del médico.
+      { path: "ajustes", loader: requireMedico, Component: SettingsView },
       // `nuevo` va fuera del layout de lista: es un formulario de página
       // completa al que se llega desde el diálogo de nueva cita.
       { path: "pacientes/nuevo", Component: PatientFormView },

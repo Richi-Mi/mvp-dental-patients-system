@@ -44,7 +44,10 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-/** Elysia returns `{ message }` for CustomError and a richer body on 422. */
+/**
+ * The backend answers every error as `{ message }` (schema validation included,
+ * as 422); `summary`/`error` cover Elysia's raw error body, just in case.
+ */
 function extractMessage(data: unknown, status: number): string {
   if (typeof data === "string" && data.trim()) return data
   if (data && typeof data === "object") {

@@ -5,6 +5,8 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  Pie,
+  PieChart,
   XAxis,
   YAxis,
 } from "recharts"
@@ -35,16 +37,19 @@ import {
 import { useDashboard } from "@/hooks/useDashboard"
 import {
   appointmentsSeries,
+  appointmentStatusSeries,
   DASHBOARD_WHOLE_YEAR,
   formatCompactCurrency,
   formatCurrency,
   formatDashboardPeriod,
+  formatPercent,
   MONTH_OPTIONS,
   salesSeries,
   type DashboardPeriod,
 } from "@/lib/clinic-data"
 import { MOBILE_CARD } from "@/lib/responsive"
 import { cn } from "@/lib/utils"
+import type { AppointmentStatus } from "@/types/clinic"
 
 const salesConfig = {
   ventas: { label: "Ventas", color: "var(--chart-1)" },
@@ -52,6 +57,23 @@ const salesConfig = {
 
 const apptConfig = {
   citas: { label: "Citas", color: "var(--chart-2)" },
+} satisfies ChartConfig
+
+/**
+ * Rebanadas del pastel de estatus (`STATUS_SLICES`). Mismos tonos que los
+ * badges de estatus de la agenda (emerald, primary, rose); como color
+ * literal porque Tailwind solo genera las variables de color que usa alguna
+ * clase. La combinación se validó para daltonismo (ΔE ≥ 8) y contraste ≥ 3:1
+ * sobre la tarjeta.
+ */
+const statusConfig = {
+  citas: { label: "Citas" },
+  completada: { label: "Completadas", color: "oklch(0.596 0.145 163.225)" },
+  confirmada: { label: "Confirmadas", color: "var(--primary)" },
+  no_asistio_cancelada: {
+    label: "No asistió / Canceladas",
+    color: "oklch(0.645 0.246 16.439)",
+  },
 } satisfies ChartConfig
 
 type Metric = {
@@ -212,42 +234,125 @@ export function DashboardView() {
         ))}
       </div>
 
-      {/* 4. Citas por mes (siempre el año completo) */}
-      <Card className={cn("border-border/70", MOBILE_CARD, stale)}>
-        <CardHeader>
-          <CardTitle className="text-base">Citas por mes</CardTitle>
-          <CardDescription>Número de citas agendadas en {year}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ChartContainer config={apptConfig} className="h-72 w-full max-sm:h-56">
-            <LineChart data={apptData} margin={{ left: 4, right: 8, top: 8 }}>
-              <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis
-                dataKey="mes"
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-              />
-              <YAxis
-                tickLine={false}
-                axisLine={false}
-                width={32}
-                allowDecimals={false}
-              />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Line
-                dataKey="citas"
-                type="monotone"
-                stroke="var(--color-citas)"
-                strokeWidth={2.5}
-                dot={{ r: 4, fill: "var(--color-citas)" }}
-                activeDot={{ r: 6 }}
-              />
-            </LineChart>
-          </ChartContainer>
-        </CardContent>
-      </Card>
+      {/* 4. Citas por mes (siempre el año completo) y su estatus (del periodo) */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className={cn("border-border/70 lg:col-span-2", MOBILE_CARD, stale)}>
+          <CardHeader>
+            <CardTitle className="text-base">Citas por mes</CardTitle>
+            <CardDescription>Número de citas agendadas en {year}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={apptConfig} className="h-72 w-full max-sm:h-56">
+              <LineChart data={apptData} margin={{ left: 4, right: 8, top: 8 }}>
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="mes"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  width={32}
+                  allowDecimals={false}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Line
+                  dataKey="citas"
+                  type="monotone"
+                  stroke="var(--color-citas)"
+                  strokeWidth={2.5}
+                  dot={{ r: 4, fill: "var(--color-citas)" }}
+                  activeDot={{ r: 6 }}
+                />
+              </LineChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+
+        <AppointmentStatusCard
+          counts={data?.citasPorEstatus}
+          periodLabel={periodLabel}
+          className={stale}
+        />
+      </div>
     </div>
+  )
+}
+
+/**
+ * Pastel de las citas del periodo por estatus: suma lo mismo que «Consultas
+ * totales». La leyenda trae los números para leer rebanadas parecidas.
+ */
+function AppointmentStatusCard({
+  counts,
+  periodLabel,
+  className,
+}: {
+  /** `undefined` mientras no hay datos (cargando o con error). */
+  counts: Record<AppointmentStatus, number> | undefined
+  periodLabel: string
+  className?: string
+}) {
+  const slices = counts ? appointmentStatusSeries(counts) : []
+  const total = slices.reduce((sum, slice) => sum + slice.citas, 0)
+
+  return (
+    <Card className={cn("border-border/70", MOBILE_CARD, className)}>
+      <CardHeader>
+        <CardTitle className="text-base">Estatus de las citas</CardTitle>
+        <CardDescription>Citas de {periodLabel}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {total === 0 ? (
+          <p className="flex h-56 items-center justify-center text-center text-sm text-muted-foreground max-sm:h-40">
+            {counts ? `Sin citas en ${periodLabel}` : EMPTY_VALUE}
+          </p>
+        ) : (
+          <>
+            <ChartContainer
+              config={statusConfig}
+              className="mx-auto aspect-square h-56 max-sm:h-48"
+            >
+              <PieChart>
+                <ChartTooltip
+                  content={<ChartTooltipContent nameKey="estatus" hideLabel />}
+                />
+                {/* Sin rebanadas en cero: el trazo dejaría una raya suelta. El
+                    color va en cada fila, así que no cambia al quitarlas. */}
+                <Pie
+                  data={slices.filter((slice) => slice.citas > 0)}
+                  dataKey="citas"
+                  nameKey="estatus"
+                  stroke="var(--card)"
+                  strokeWidth={2}
+                />
+              </PieChart>
+            </ChartContainer>
+            <ul className="flex flex-col gap-2 text-sm">
+              {slices.map((slice) => (
+                <li key={slice.estatus} className="flex items-center gap-2">
+                  <span
+                    className="size-2.5 shrink-0 rounded-[2px]"
+                    style={{ backgroundColor: statusConfig[slice.estatus].color }}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                    {statusConfig[slice.estatus].label}
+                  </span>
+                  <span className="font-medium tabular-nums text-foreground">
+                    {slice.citas}
+                  </span>
+                  <span className="w-10 text-right tabular-nums text-muted-foreground">
+                    {formatPercent(slice.citas / total)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

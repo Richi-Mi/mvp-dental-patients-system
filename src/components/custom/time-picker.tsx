@@ -3,6 +3,14 @@
 import * as React from "react"
 import { Clock } from "lucide-react"
 
+import {
+  OPENING_HOURS,
+  clampSegment,
+  splitTime,
+  typeDigit,
+  type HourRange,
+  type Segment,
+} from "@/lib/time-segment"
 import { cn } from "@/lib/utils"
 
 /**
@@ -12,45 +20,15 @@ import { cn } from "@/lib/utils"
  * teclado numérico en móvil.
  *
  * Trabaja sobre un string `HH:mm` en 24 h, que es el formato que usa el resto
- * de la app (`Appointment.time`).
+ * de la app (`Appointment.time` y `Appointment.endTime`).
  */
-
-type Segment = "hours" | "minutes"
-
-// El consultorio solo atiende de 10 a 20 h: el segmento de horas no admite
-// nada fuera de ese rango.
-const MIN_VALUE: Record<Segment, number> = { hours: 10, minutes: 0 }
-const MAX_VALUE: Record<Segment, number> = { hours: 20, minutes: 59 }
-
-/** Deja el valor en dos dígitos dentro del rango del segmento. */
-function clampSegment(value: string, segment: Segment, loop = false): string {
-  const min = MIN_VALUE[segment]
-  const max = MAX_VALUE[segment]
-  let numeric = Number.parseInt(value, 10)
-  if (Number.isNaN(numeric)) return String(min).padStart(2, "0")
-
-  if (loop) {
-    if (numeric > max) numeric = min
-    if (numeric < min) numeric = max
-  } else {
-    numeric = Math.min(Math.max(numeric, min), max)
-  }
-  return String(numeric).padStart(2, "0")
-}
-
-function splitTime(time: string): Record<Segment, string> {
-  const [hours = "00", minutes = "00"] = time.split(":")
-  return {
-    hours: clampSegment(hours, "hours"),
-    minutes: clampSegment(minutes, "minutes"),
-  }
-}
 
 type TimeSegmentProps = {
   id?: string
   segment: Segment
   label: string
   value: string
+  hours: HourRange
   onChange: (time: string) => void
   onLeftFocus?: () => void
   onRightFocus?: () => void
@@ -67,6 +45,7 @@ function TimeSegment({
   segment,
   label,
   value,
+  hours,
   onChange,
   onLeftFocus,
   onRightFocus,
@@ -75,18 +54,19 @@ function TimeSegment({
   arrowStep = 1,
   arrowStepEvent = "keydown",
 }: TimeSegmentProps) {
-  // Marca que ya se escribió el primer dígito del par (p. ej. "0" -> "09").
-  const [halfTyped, setHalfTyped] = React.useState(false)
+  // Primer dígito ya tecleado del par, a la espera del segundo. Se guarda
+  // aparte del valor mostrado, que ya viene ajustado al rango.
+  const [pending, setPending] = React.useState<string | null>(null)
 
-  const parts = splitTime(value)
+  const parts = splitTime(value, hours)
   const current = parts[segment]
 
   // Si el usuario se detiene, el siguiente dígito vuelve a empezar el par.
   React.useEffect(() => {
-    if (!halfTyped) return
-    const timer = setTimeout(() => setHalfTyped(false), 2000)
+    if (pending === null) return
+    const timer = setTimeout(() => setPending(null), 2000)
     return () => clearTimeout(timer)
-  }, [halfTyped])
+  }, [pending])
 
   function commit(next: string) {
     onChange(
@@ -114,16 +94,16 @@ function TimeSegment({
       // (p. ej. minutos, que avanzan de 10 en 10 con `keyup`).
       if (arrowStepEvent === "keyup") return
       const step = event.key === "ArrowUp" ? arrowStep : -arrowStep
-      setHalfTyped(false)
-      commit(clampSegment(String(Number(current) + step), segment, true))
+      setPending(null)
+      commit(clampSegment(String(Number(current) + step), segment, true, hours))
       return
     }
 
-    if (event.key >= "0" && event.key <= "9") {
-      const next = halfTyped ? `${current[1]}${event.key}` : `0${event.key}`
-      commit(clampSegment(next, segment))
-      if (halfTyped) onRightFocus?.()
-      setHalfTyped(!halfTyped)
+    if (event.key.length === 1 && event.key >= "0" && event.key <= "9") {
+      const result = typeDigit(segment, pending, event.key, hours)
+      commit(result.value)
+      setPending(result.pending)
+      if (result.advance) onRightFocus?.()
     }
   }
 
@@ -132,8 +112,8 @@ function TimeSegment({
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return
 
     const step = event.key === "ArrowUp" ? arrowStep : -arrowStep
-    setHalfTyped(false)
-    commit(clampSegment(String(Number(current) + step), segment, true))
+    setPending(null)
+    commit(clampSegment(String(Number(current) + step), segment, true, hours))
   }
 
   return (
@@ -152,6 +132,7 @@ function TimeSegment({
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
       onFocus={(event) => event.currentTarget.select()}
+      onBlur={() => setPending(null)}
       className={cn(
         "h-9 w-12 rounded-lg border border-input bg-transparent text-center text-sm tabular-nums shadow-xs outline-none transition-colors max-lg:h-11 max-lg:w-14 max-sm:text-base",
         "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
@@ -166,6 +147,13 @@ export type TimePickerProps = {
   /** Hora en formato `HH:mm` (24 h). */
   value: string
   onChange: (time: string) => void
+  /**
+   * Nombre del campo para lectores de pantalla ("Hora de fin"): hace falta si
+   * hay más de un selector de hora en el formulario.
+   */
+  label?: string
+  /** Última hora que admite; por defecto, `CLOSING_HOUR`. */
+  maxHour?: number
   disabled?: boolean
   className?: string
 }
@@ -174,11 +162,14 @@ export function TimePicker({
   id,
   value,
   onChange,
+  label,
+  maxHour = OPENING_HOURS.max,
   disabled,
   className,
 }: TimePickerProps) {
   const hoursRef = React.useRef<HTMLInputElement>(null)
   const minutesRef = React.useRef<HTMLInputElement>(null)
+  const hours: HourRange = { min: OPENING_HOURS.min, max: maxHour }
 
   return (
     <div className={cn("flex items-center gap-1.5", className)}>
@@ -186,8 +177,9 @@ export function TimePicker({
         id={id}
         ref={hoursRef}
         segment="hours"
-        label="Horas"
+        label={label ? `${label}, horas` : "Horas"}
         value={value}
+        hours={hours}
         onChange={onChange}
         onRightFocus={() => minutesRef.current?.focus()}
         disabled={disabled}
@@ -198,8 +190,9 @@ export function TimePicker({
       <TimeSegment
         ref={minutesRef}
         segment="minutes"
-        label="Minutos"
+        label={label ? `${label}, minutos` : "Minutos"}
         value={value}
+        hours={hours}
         onChange={onChange}
         onLeftFocus={() => hoursRef.current?.focus()}
         disabled={disabled}

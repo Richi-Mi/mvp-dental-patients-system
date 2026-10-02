@@ -22,9 +22,11 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Separator } from "@/components/ui/separator"
+import { AppointmentReminderButtons } from "@/components/custom/appointment-reminder-buttons"
 import { ClinicalHistoryDialog } from "@/components/custom/clinical-history-dialog"
 import { ConfirmDialog } from "@/components/custom/confirm-dialog"
 import { EditPatientDialog } from "@/components/custom/edit-patient-dialog"
+import { PatientPhotos } from "@/components/custom/patient-photos"
 import { TreatmentsTable } from "@/components/custom/treatments-table"
 import { usePatient, usePatients } from "@/hooks/usePatients"
 import {
@@ -32,6 +34,7 @@ import {
   formatAge,
   formatDayName,
   formatLongDate,
+  formatTimeRange,
 } from "@/lib/clinic-data"
 import { MOBILE_CARD } from "@/lib/responsive"
 import { cn } from "@/lib/utils"
@@ -163,19 +166,25 @@ export function PatientDetailView() {
               Próxima cita
             </div>
             {nextAppointment ? (
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg bg-primary/5 px-4 py-3 text-sm">
-                <span className="font-medium capitalize text-foreground">
-                  {formatDayName(nextAppointment.date)}
-                </span>
-                <span className="text-muted-foreground">
-                  {formatLongDate(nextAppointment.date)}
-                </span>
-                <span className="font-medium text-foreground">
-                  {nextAppointment.time} h
-                </span>
-                <Badge className={STATUS_META[nextAppointment.status].className}>
-                  {STATUS_META[nextAppointment.status].label}
-                </Badge>
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg bg-primary/5 px-4 py-3 text-sm">
+                  <span className="font-medium capitalize text-foreground">
+                    {formatDayName(nextAppointment.date)}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {formatLongDate(nextAppointment.date)}
+                  </span>
+                  <span className="font-medium text-foreground">
+                    {formatTimeRange(nextAppointment.time, nextAppointment.endTime)} h
+                  </span>
+                  <Badge className={STATUS_META[nextAppointment.status].className}>
+                    {STATUS_META[nextAppointment.status].label}
+                  </Badge>
+                </div>
+                <AppointmentReminderButtons
+                  patient={patient}
+                  appointment={nextAppointment}
+                />
               </div>
             ) : (
               <p className="rounded-lg bg-muted px-4 py-3 text-sm text-muted-foreground">
@@ -192,6 +201,9 @@ export function PatientDetailView() {
         isSaving={isSavingTreatments}
         saveError={saveTreatmentsError}
       />
+
+      {/* `key`: al cambiar de paciente se reinicia (visor cerrado, sin selección). */}
+      <PatientPhotos key={patient.id} patientId={patient.id} />
     </div>
   )
 }

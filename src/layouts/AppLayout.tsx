@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Settings,
   UserCog,
   Users,
 } from "lucide-react"
@@ -29,13 +30,14 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, medicoOnly: true },
   { to: "/pacientes", label: "Pacientes", icon: Users },
   { to: "/usuarios", label: "Asistentes", icon: UserCog, medicoOnly: true },
+  { to: "/ajustes", label: "Ajustes", icon: Settings, medicoOnly: true },
 ] as const
 
 type NavItem = (typeof NAV)[number]
 
 const TITULO_POR_GENERO = {
-  femenino: "Cirujana Dental",
-  masculino: "Cirujano Dental",
+  femenino: "Cirujana Dentista",
+  masculino: "Cirujano Dentista",
 } as const
 
 // El género solo sirve para elegir el título del médico; los asistentes y los
@@ -207,7 +209,8 @@ function BottomNav({ nav }: { nav: readonly NavItem[] }) {
                 <>
                   <span
                     className={cn(
-                      "flex h-8 w-14 items-center justify-center rounded-full transition-colors",
+                      // `max-w-full`: con 5 pestañas y letra grande (Ajustes) no se sale de la suya.
+                      "flex h-8 w-14 max-w-full items-center justify-center rounded-full transition-colors",
                       isActive ? "bg-primary/10" : "group-hover:bg-muted",
                     )}
                   >

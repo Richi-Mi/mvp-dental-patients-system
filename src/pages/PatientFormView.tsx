@@ -70,7 +70,7 @@ export function PatientFormView() {
     try {
       patient = await createPatient({ ...form, name: form.name.trim() })
     } catch {
-      // El mensaje del backend (p. ej. un 400) se muestra vía `createError`.
+      // El mensaje del backend (p. ej. un 422) se muestra vía `createError`.
       return
     }
 

@@ -1,7 +1,14 @@
-import { CLINICAL_HISTORY_QUESTIONS, toISODateString } from "@/lib/clinic-data"
+import {
+  APPOINTMENT_STATUSES,
+  CLINICAL_HISTORY_QUESTIONS,
+  defaultEndTime,
+  toISODateString,
+} from "@/lib/clinic-data"
 import type {
+  AjustesDTO,
   CitaDTO,
   DashboardDTO,
+  FotoDTO,
   HistorialClinicoDTO,
   HistorialPayload,
   PacienteDTO,
@@ -10,23 +17,18 @@ import type {
   UsuarioDTO,
 } from "@/api/types"
 import type {
+  Ajustes,
   Appointment,
   AppointmentStatus,
   ClinicalHistory,
   DashboardMetrics,
   Patient,
   PatientInput,
+  PatientPhoto,
   Treatment,
   TreatmentInput,
   Usuario,
 } from "@/types/clinic"
-
-const APPOINTMENT_STATUSES: AppointmentStatus[] = [
-  "confirmada",
-  "pendiente",
-  "completada",
-  "cancelada",
-]
 
 function pad(n: number): string {
   return String(n).padStart(2, "0")
@@ -77,11 +79,33 @@ export function toNumber(value: number | string | null | undefined): number {
   return Number.isFinite(numeric) ? numeric : 0
 }
 
+/**
+ * Un estatus que el cliente no maneja (incluido el antiguo "pendiente") se
+ * muestra como "no_asistio".
+ */
 export function normalizeStatus(estatus: string): AppointmentStatus {
   const value = estatus?.trim().toLowerCase()
   return (
-    APPOINTMENT_STATUSES.find((s) => s === value) ?? "pendiente"
+    APPOINTMENT_STATUSES.find((s) => s === value) ?? "no_asistio"
   )
+}
+
+/**
+ * Conteo por estatus del dashboard con las 4 llaves del cliente. Cada estatus
+ * del servidor pasa por `normalizeStatus`, así que "pendiente" o "Confirmada "
+ * caen donde se muestran en la agenda.
+ */
+export function toStatusCounts(
+  citasPorEstatus: Record<string, number> | undefined,
+): Record<AppointmentStatus, number> {
+  const counts = Object.fromEntries(
+    APPOINTMENT_STATUSES.map((status) => [status, 0]),
+  ) as Record<AppointmentStatus, number>
+
+  for (const [estatus, total] of Object.entries(citasPorEstatus ?? {})) {
+    counts[normalizeStatus(estatus)] += toNumber(total)
+  }
+  return counts
 }
 
 /** Siempre 12 posiciones, aunque el backend mande menos. */
@@ -107,7 +131,12 @@ export function toDashboard(dto: DashboardDTO): DashboardMetrics {
     dineroACuenta: Math.max(0, ventasTotales - dineroPorCobrar),
     ventasPorMes: toMonthlyArray(dto.ventasPorMes),
     citasPorMes: toMonthlyArray(dto.citasPorMes),
+    citasPorEstatus: toStatusCounts(dto.citasPorEstatus),
   }
+}
+
+export function toAjustes(dto: AjustesDTO): Ajustes {
+  return { autocompletarCitas: dto.autocompletarCitas === true }
 }
 
 export function toUsuario(dto: UsuarioDTO): Usuario {
@@ -120,11 +149,17 @@ export function toUsuario(dto: UsuarioDTO): Usuario {
   }
 }
 
+/**
+ * Nombre con el que el backend guarda un tratamiento capturado sin nombre
+ * (solo con costo o a cuenta). En la interfaz se muestra vacío.
+ */
+const TRATAMIENTO_SIN_MOTIVO = "SIN_MOTIVO"
+
 export function toTreatment(dto: TratamientoDTO): Treatment {
   return {
     id: dto.id,
     fecha: toISODate(dto.fecha),
-    tratamiento: dto.nombre,
+    tratamiento: dto.nombre === TRATAMIENTO_SIN_MOTIVO ? "" : dto.nombre,
     costo: toNumber(dto.costo),
     aCuenta: toNumber(dto.cuenta),
   }
@@ -135,6 +170,7 @@ export function toTreatmentPayload(
 ): TratamientoPayload {
   return {
     fecha: treatment.fecha,
+    // Vacío: el backend lo guarda como `TRATAMIENTO_SIN_MOTIVO`.
     nombre: treatment.tratamiento,
     // Se normaliza también de salida: es la frontera donde el backend valida.
     costo: toNumber(treatment.costo),
@@ -144,12 +180,15 @@ export function toTreatmentPayload(
 
 export function toAppointment(dto: CitaDTO): Appointment {
   const at = new Date(dto.fecha_cita)
+  const time = toLocalTime(at)
   return {
     id: dto.id,
     patientId: dto.id_paciente,
     patientName: dto.paciente?.nombre ?? "",
     date: toISODateString(at),
-    time: toLocalTime(at),
+    time,
+    // Ya es hora local (`HH:MM`); el respaldo cubre un backend sin la columna.
+    endTime: dto.horaFin?.slice(0, 5) || defaultEndTime(time),
     status: normalizeStatus(dto.estatus),
     motivo: dto.motivo,
   }
@@ -198,6 +237,15 @@ export function toPatient(dto: PacienteDTO): Patient {
     clinicalHistory: dto.historialClinico
       ? toClinicalHistory(dto.historialClinico)
       : null,
+  }
+}
+
+export function toPatientPhoto(dto: FotoDTO): PatientPhoto {
+  return {
+    name: dto.img_name,
+    patientId: dto.id_paciente,
+    uploadedAt: toLocalISODate(dto.fecha_subida),
+    url: dto.url,
   }
 }
 

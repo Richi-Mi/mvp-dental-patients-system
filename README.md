@@ -41,7 +41,7 @@ bun install
 bun run dev            # servidor de desarrollo con HMR
 bun run lint           # ESLint
 bun run build          # tsc -b + vite build → dist/
-bun run build:server   # tsc -b + vite build → ../backend/public (producción)
+bun run build:server   # test + lint + tsc -b + vite build → ../backend/public (producción)
 bun run preview        # sirve el último build de dist/
 ```
 
@@ -62,7 +62,7 @@ Los `*.test.ts` están excluidos de `tsconfig.app.json`, así que `tsc -b` no lo
 La aplicación no se despliega por separado: el backend sirve el build desde su carpeta `public/`.
 
 ```bash
-bun run build:server           # compila dentro de ../backend/public (la vacía antes)
+bun run build:server           # corre pruebas y lint, y compila dentro de ../backend/public (la vacía antes)
 cd ../backend && bun run start # reiniciar si ya estaba corriendo
 ```
 
@@ -91,6 +91,7 @@ src/
 │   ├── clinic-data.ts    # Formato es-MX, semanas ISO, días de atención
 │   ├── query-client.ts   # Configuración de TanStack Query
 │   ├── query-keys.ts     # Claves de caché
+│   ├── patient-photos.ts # Reglas de las fotos (máximo 5, tamaño, formatos) que se revisan antes de subir
 │   ├── offline-queue.ts  # Lógica pura de la cola sin conexión (compactar cambios, combinarlos con datos del servidor)
 │   ├── save-or-queue.ts  # Intenta guardar en el servidor; si no hay conexión, encola
 │   └── offline-sync.ts   # Reenvía la cola pendiente y refresca las consultas al recuperar conexión
@@ -99,7 +100,7 @@ src/
 ├── pages/                # Una vista por ruta
 └── components/
     ├── ui/               # Generados por shadcn (no editar a mano)
-    └── custom/           # Componentes propios (diálogos, confirm-dialog, calendario, time-picker, tabla de tratamientos, sync-button)
+    └── custom/           # Componentes propios (diálogos, confirm-dialog, calendario, time-picker, tabla de tratamientos, imágenes del paciente y su visor, sync-button)
 ```
 
 ## Arquitectura
@@ -129,6 +130,7 @@ pages / components  →  hooks (TanStack Query)  →  actions  →  api (Axios) 
 | `/pacientes/:id`    | `PatientDetailView`              | `requireAuth`                     |
 | `/pacientes/nuevo`  | `PatientFormView` (página completa) | `requireAuth`                  |
 | `/usuarios`         | `UsersView`                      | `requireAuth` + `requireMedico`   |
+| `/ajustes`          | `SettingsView`                   | `requireAuth` + `requireMedico`   |
 | `*`                 | `NotFoundView`                   | —                                 |
 
 La protección está en **loaders**, no en componentes. La sesión de Zustand se hidrata de `localStorage` de forma sincrónica, así que `requireAuth` la lee antes de que React monte. Si no hay sesión, redirige a `/login?redirectTo=<ruta original>`.
@@ -143,12 +145,15 @@ La protección está en **loaders**, no en componentes. La sesión de Zustand se
 ### Reglas de dominio
 
 - **Días de atención**: `CLOSED_WEEKDAYS` en `lib/clinic-data.ts` es el único lugar donde se define qué días cierra el consultorio (hoy, domingo). De ahí salen las columnas de la agenda, los días deshabilitados del calendario, la validación del formulario de cita y los textos de la interfaz.
-- **Agenda semanal**: se pide por año-semana **ISO** (lunes a domingo) y se reagrupa por día **local**. Las citas que caen fuera de la semana por desfase de huso horario se listan aparte (`outOfWeek`) para no perderlas. Usa `getISOWeek`/`isoWeekDates`, no aritmética manual: a inicios de enero, el año ISO puede no coincidir con el calendario.
+- **Horario de atención**: `OPENING_HOUR`/`CLOSING_HOUR` en `lib/clinic-data.ts` definen el rango (hoy, de 10 a 20 h). De ahí salen las filas del horario semanal (`AGENDA_HOURS`, un bloque por hora) y el rango que acepta el `TimePicker`. La última hora es un bloque completo: una cita de las 20:45 sigue en horario (por eso la hora de fin admite una hora más, `LAST_END_HOUR`).
+- **Duración de las citas**: cada cita tiene hora de inicio y de fin (`time`/`endTime`, `horaFin` en el API, en el reloj del consultorio). Una cita nueva dura una hora; en el formulario, mover la hora de inicio arrastra la de fin conservando la duración, y el fin debe ser posterior al inicio.
+- **Agenda semanal**: se pide por año-semana **ISO** (lunes a domingo) y se reagrupa por día **local**. Se muestra como un horario en CSS Grid: las filas son las horas de atención y las columnas los días abiertos. Cada cita abarca las filas de las horas que toca hasta su fin (`layoutDay`); las que empiezan en la misma hora se apilan en un bloque (10:15 y 10:45 caen las dos en el de las 10:00) y las que se enciman con otra van lado a lado, en carriles que ensanchan ese día. Las citas que caen fuera de la semana por desfase de huso horario se listan aparte (`outOfWeek`) y las que caen fuera del horario van a la fila "Fuera" (`groupByHour`), para no perderlas. Usa `getISOWeek`/`isoWeekDates`, no aritmética manual: a inicios de enero, el año ISO puede no coincidir con el calendario.
 - **Fechas**: `parseISO` interpreta fechas ISO como **locales** para evitar corrimientos de un día. Úsala en lugar de `new Date(iso)` para campos de fecha.
 - **Importes**: el backend envía `numeric` como string (`"1200.00"`) pero valida `number` al recibir. `toNumber` en `mappers.ts` normaliza en ambos sentidos.
 - **Tratamientos**: `PUT /pacientes/:id` reemplaza la lista completa, así que la tabla de tratamientos se edita en bloque y se guarda con una sola petición.
 - **Alta de paciente desde una cita**: el diálogo de nueva cita se controla por URL (`/agenda?cita=nueva`) y su borrador vive en `ui.store`. Al pasar por `/pacientes/nuevo?redirectTo=…` no se pierde lo capturado, y el paciente creado vuelve preseleccionado (`&paciente=<id>`).
 - **Dashboard**: una sola petición a `GET /user/dashboard?year=&month=`, que ya viene agregada. El mes y el año se eligen con segmentadores y viven en la URL.
+- **Imágenes del paciente**: sección del expediente, debajo del control de tratamiento. Admite hasta 5 imágenes por paciente, con el contador `n/5`. Se suben varias a la vez (JPG, PNG, WebP, GIF o BMP de hasta 20 MB) y el backend las guarda en WebP. Al hacer clic en una se abre un visor con `<` y `>` (o las flechas del teclado), y cada miniatura tiene un botón para eliminarla que aparece al pasar el puntero. Las imágenes piden el header `token`, así que no van en un `<img src>`: se descargan con Axios y se muestran con un object URL (`PhotoImage`).
 
 La interfaz y los formatos están en **español (es-MX)**. Usa los helpers de `clinic-data.ts` (`formatCurrency`, `formatLongDate`, …) para textos nuevos.
 
@@ -161,6 +166,7 @@ Si el consultorio se queda sin internet a media consulta, crear o editar citas, 
 - Antes de guardar una cita sin conexión se revisa contra lo que ya se conoce de esa agenda si el horario ya está ocupado (el backend no puede validarlo hasta que haya conexión): si choca, se avisa de inmediato en vez de descubrirlo minutos después al sincronizar.
 - Al recuperar la conexión (el evento `online` del navegador, o cada 15 s si no se sabe si ya volvió — útil cuando el que se cayó fue el servidor, no la red del equipo) se refrescan las pantallas y se reenvían los cambios pendientes en orden. Un cambio que ya no se puede aplicar (p. ej. el horario se ocupó mientras tanto) se descarta con un aviso explicando el motivo.
 - El botón de sincronización, arriba a la derecha en la Agenda, solo aparece mientras hay cambios sin sincronizar.
+- Las imágenes de los pacientes son la excepción: subirlas o eliminarlas necesita conexión, porque los archivos no caben en la cola. Tampoco se guardan en el equipo para verlas sin conexión (son imágenes clínicas).
 - El token de sesión dura 3 días (antes 1), precisamente para tolerar una jornada sin conexión sin pedir volver a iniciar sesión.
 
 Detalle técnico completo (comportamiento ante race conditions, ids temporales, compactación de la cola) en `CLAUDE.md`.
@@ -173,7 +179,7 @@ Detalle técnico completo (comportamiento ante race conditions, ids temporales, 
 - `src/components/ui/` es código generado (`bunx shadcn add <componente>`). Para personalizarlo, copia el componente a `src/components/custom/`. ESLint desactiva `react-refresh/only-export-components` solo en esa carpeta porque shadcn exporta las variantes `cva` junto al componente.
 - Tailwind 4: los tokens del tema son variables CSS en `src/index.css` (`@theme inline`).
 - Capas superpuestas: los diálogos van en `z-50` y el popover del calendario en `z-60` para quedar por encima.
-- **Confirmaciones y toasts**: no uses `window.alert`/`window.confirm`. Para acciones destructivas usa `ConfirmDialog` (`components/custom/confirm-dialog.tsx`, sobre el `AlertDialog` de shadcn): recibe el `trigger`, los textos y un `onConfirm` que devuelve una promesa, y muestra el toast solo (éxito, error del servidor o "cancelado" al cerrar con Cancelar/Esc). Mientras corre la acción no se puede cerrar; si falla, sigue abierto para reintentar. Hoy se usa para dar de baja pacientes, eliminar asistentes y eliminar citas.
+- **Confirmaciones y toasts**: no uses `window.alert`/`window.confirm`. Para acciones destructivas usa `ConfirmDialog` (`components/custom/confirm-dialog.tsx`, sobre el `AlertDialog` de shadcn): recibe el `trigger`, los textos y un `onConfirm` que devuelve una promesa, y muestra el toast solo (éxito, error del servidor o "cancelado" al cerrar con Cancelar/Esc). Mientras corre la acción no se puede cerrar; si falla, sigue abierto para reintentar. Hoy se usa para dar de baja pacientes, eliminar asistentes, eliminar citas y eliminar imágenes de pacientes.
 - Los toasts son de **Sonner**: `<Toaster position="bottom-right" richColors />` se monta una vez en `ClinicApp.tsx`; en cualquier otro lugar basta `import { toast } from "sonner"`.
 - Al instalar componentes con `bunx shadcn add`, contesta **no** si pregunta por sobrescribir `button.tsx` (u otro ya existente). El registro de `alert-dialog` generó `import { cn } from "cn"` y agregó un paquete `cn` de npm: el import correcto es `@/lib/utils` y ese paquete no se usa.
 

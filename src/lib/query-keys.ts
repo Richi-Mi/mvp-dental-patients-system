@@ -4,6 +4,10 @@ export const queryKeys = {
   auth: {
     me: ["auth", "me"] as const,
   },
+  /** Ajustes del médico; la caché se borra al cerrar sesión, basta una llave. */
+  ajustes: {
+    all: ["ajustes"] as const,
+  },
   dashboard: {
     all: ["dashboard"] as const,
     byPeriod: (year: number, month: number | null) =>
@@ -21,6 +25,16 @@ export const queryKeys = {
     list: (medicoEmail?: string | null) =>
       ["pacientes", "list", medicoEmail ?? "propio"] as const,
     detail: (id: number) => ["pacientes", "detail", id] as const,
+  },
+  /**
+   * Fotos de pacientes. Van fuera de `["pacientes"]` para que invalidar al
+   * paciente (p. ej. al guardar tratamientos) no vuelva a descargar imágenes.
+   */
+  photos: {
+    all: ["fotos"] as const,
+    list: (patientId: number) => ["fotos", "list", patientId] as const,
+    /** Contenido (Blob) de una foto, por su `url`. */
+    file: (url: string) => ["fotos", "file", url] as const,
   },
   appointments: {
     all: ["citas"] as const,

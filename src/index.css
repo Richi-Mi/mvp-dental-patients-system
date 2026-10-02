@@ -126,7 +126,18 @@
     }
   html {
     @apply font-sans;
+    /* Tamaño de letra elegido en Ajustes (`lib/font-size.ts`), relativo al
+       del navegador. Todo en Tailwind está en rem, así que escala parejo; los
+       breakpoints no se mueven (en una media query el rem es el del navegador). */
+    font-size: var(--app-font-size, 100%);
     }
+  /* En teléfono nunca por debajo del tamaño del navegador: iOS hace zoom al
+     enfocar un campo de menos de 16px (ver `max-sm:text-base` en CLAUDE.md). */
+  @media (width < 40rem) {
+    html {
+      font-size: max(100%, var(--app-font-size, 100%));
+    }
+  }
 }
 /*
  * Sistema responsive (breakpoints de Tailwind, ver CLAUDE.md):

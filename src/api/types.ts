@@ -23,6 +23,7 @@ export type UsuarioDTO = {
 export type TratamientoDTO = {
   id: string
   fecha: string
+  /** `"SIN_MOTIVO"` si se capturó sin nombre; `toTreatment` lo deja vacío. */
   nombre: string
   /**
    * Las columnas `decimal` de Postgres llegan como string ("1200.00"), no
@@ -64,9 +65,28 @@ export type HistorialClinicoDTO = {
   historial: Record<PreguntaHistorial, string | null>
 }
 
+/** Foto de un paciente (`/pacientes/:id/fotos`); el backend las guarda en WebP. */
+export type FotoDTO = {
+  /** Nombre del archivo en el servidor (`${id_paciente}_${uuid}.webp`); identifica la foto. */
+  img_name: string
+  /** Timestamp ISO de la carga. */
+  fecha_subida: string
+  id_paciente: number
+  /**
+   * Ruta del API que devuelve la imagen. Exige el header `token`, así que no
+   * sirve en un `<img src>`: se descarga con Axios (`getPhotoFile`).
+   */
+  url: string
+}
+
 export type CitaDTO = {
   id: string
   fecha_cita: string
+  /**
+   * `HH:MM` (24 h) en el reloj del consultorio, que es el mismo en que se
+   * muestra `fecha_cita`. Siempre posterior a la hora de inicio.
+   */
+  horaFin: string
   motivo: string
   estatus: string
   correo_medico: string
@@ -100,6 +120,10 @@ export type UpdateUsuarioPayload = {
 
 export type TratamientoPayload = {
   fecha: string
+  /**
+   * Vacío, el backend lo guarda como `"SIN_MOTIVO"`; en ese caso necesita
+   * `costo` o `cuenta` (400 si faltan los tres).
+   */
   nombre: string
   costo?: number | null
   cuenta?: number | null
@@ -154,10 +178,31 @@ export type DashboardDTO = {
   ventasPorMes: number[]
   /** 12 posiciones, índice 0 = enero. */
   citasPorMes: number[]
+  /**
+   * Citas del periodo por `estatus`, con la llave sin espacios y en minúsculas
+   * tal como está guardada (incluido el antiguo "pendiente"). Suma
+   * `consultasTotales`. Opcional: un backend anterior no lo manda.
+   */
+  citasPorEstatus?: Record<string, number>
 }
 
 /** Sin `month` responde con todo el año. */
 export type DashboardQuery = { year?: number; month?: number }
+
+/** `GET /ajustes` — ajustes del médico autenticado (solo rol `medico`). */
+export type AjustesDTO = {
+  /** Las citas `confirmada` de hace más de 24 h pasan solas a `completada`. */
+  autocompletarCitas: boolean
+}
+
+/** `PUT /ajustes` — campo omitido = no cambia. */
+export type UpdateAjustesPayload = Partial<AjustesDTO>
+
+/** Respuesta de `PUT /ajustes`. */
+export type AjustesActualizadosDTO = AjustesDTO & {
+  /** Citas que el backend completó al guardar (0 si quedó desactivado). */
+  citasCompletadas: number
+}
 
 /** `GET /pacientes` — un asistente pide los pacientes del médico que atiende. */
 export type PacientesQuery = { correo_medico?: string }
@@ -172,6 +217,8 @@ export type CitasQuery = {
 export type CreateCitaPayload = {
   id_paciente: number
   fecha_cita: string
+  /** `HH:MM`. Omitida: la cita dura una hora (al editar, mover la cita conserva su duración). */
+  horaFin?: string
   motivo: string
   estatus: string
 }

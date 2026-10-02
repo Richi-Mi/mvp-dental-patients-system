@@ -1,6 +1,6 @@
 import { create } from "zustand"
 
-import { nextOpenDay, todayISO } from "@/lib/clinic-data"
+import { defaultEndTime, nextOpenDay, todayISO } from "@/lib/clinic-data"
 import type { AppointmentStatus } from "@/types/clinic"
 
 /** Formulario de nueva cita en curso. */
@@ -8,15 +8,18 @@ export type AppointmentDraft = {
     patientId: string
     date: string
     time: string
+    endTime: string
     status: AppointmentStatus
     motivo: string
 }
 
 function emptyAppointmentDraft(): AppointmentDraft {
+    const time = "10:00"
     return {
         patientId: "",
         date: nextOpenDay(todayISO()),
-        time: "10:00",
+        time,
+        endTime: defaultEndTime(time),
         status: "confirmada",
         motivo: "",
     }

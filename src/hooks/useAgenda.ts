@@ -240,10 +240,22 @@ export function useAgenda() {
         return appointments.filter((a) => !visible.has(a.date))
     }, [appointments, weekDays])
 
+    /**
+     * Otra cita en ese día y hora, si la hay. Al crear, el backend la rechaza
+     * con un 409 (su id se arma con el horario); al **editar** no, porque la
+     * cita conserva el id con el que se creó, así que mover una cita a un
+     * horario ocupado solo se puede evitar desde aquí. Sirve también para
+     * avisar antes de encolar un cambio sin conexión (ver `findConflict`).
+     */
+    const findTimeConflict = (date: string, time: string, excludeId?: string) =>
+        findConflict(appointments, date, time, excludeId)
+
     const invalidate = React.useCallback(
         (patientId?: number) =>
             Promise.all([
                 queryClient.invalidateQueries({ queryKey: queryKeys.appointments.all }),
+                // El dashboard cuenta las citas por mes y por estatus.
+                queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all }),
                 patientId != null &&
                     queryClient.invalidateQueries({
                         queryKey: queryKeys.patients.detail(patientId),
@@ -291,6 +303,7 @@ export function useAgenda() {
                     patientName: patientName ?? "",
                     date: cita.date,
                     time: cita.time,
+                    endTime: cita.endTime,
                     status: cita.status,
                     motivo: cita.motivo,
                 }),
@@ -302,12 +315,28 @@ export function useAgenda() {
     })
 
     const updateMutation = useMutation({
-        mutationFn: ({ id, input }: { id: string; input: Partial<AppointmentInput> }) => {
+        mutationFn: ({
+            id,
+            input,
+            patientName,
+        }: {
+            id: string
+            input: Partial<AppointmentInput>
+            /** Nombre del paciente resultante; solo hace falta si el cambio lo reasigna. */
+            patientName?: string
+        }) => {
             const current = appointments.find((a) => a.id === id)
+            const subject = patientName ?? current?.patientName ?? ""
 
             return saveOrQueue({
-                send: () => citasActions.updateAppointment(id, input),
-                op: { type: "cita.update", citaId: id, input, subject: current?.patientName ?? "" },
+                send: () => citasActions.updateAppointment(id, input, medicoEmail),
+                op: {
+                    type: "cita.update",
+                    citaId: id,
+                    input,
+                    subject,
+                    ...(medicoEmail ? { medicoCorreo: medicoEmail } : {}),
+                },
                 // Igual que al crear: solo aplica si de verdad mueve la cita
                 // de horario (ver el comentario en `createMutation`).
                 validate: () => {
@@ -323,7 +352,7 @@ export function useAgenda() {
                 },
                 optimistic: () => {
                     if (!current) throw new Error("Cita no encontrada")
-                    return { ...current, ...input }
+                    return { ...current, ...input, patientName: subject || current.patientName }
                 },
             })
         },
@@ -337,8 +366,13 @@ export function useAgenda() {
         mutationFn: (id: string) => {
             const current = appointments.find((a) => a.id === id)
             return saveOrQueue({
-                send: () => citasActions.deleteAppointment(id),
-                op: { type: "cita.delete", citaId: id, subject: current?.patientName ?? "" },
+                send: () => citasActions.deleteAppointment(id, medicoEmail),
+                op: {
+                    type: "cita.delete",
+                    citaId: id,
+                    subject: current?.patientName ?? "",
+                    ...(medicoEmail ? { medicoCorreo: medicoEmail } : {}),
+                },
                 optimistic: () => ({ message: "Cita eliminada" }),
             })
         },
@@ -363,6 +397,7 @@ export function useAgenda() {
         selectedDay,
         selectDay,
         clearFilters,
+        findTimeConflict,
 
         /** Solo un asistente elige médico; un médico ve siempre su agenda. */
         isAsistente,

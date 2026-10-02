@@ -1,9 +1,15 @@
 /** UI domain model. Mapped from the server DTOs in `@/lib/mappers`. */
 
+/**
+ * El backend guarda `estatus` como texto libre (`varchar(50)`), así que esta
+ * lista es la del cliente: lo que se puede elegir y mostrar (ver `STATUS_META`
+ * en `lib/clinic-data.ts`). Un valor desconocido, como el antiguo
+ * "pendiente", cae en "no_asistio" (`normalizeStatus`).
+ */
 export type AppointmentStatus =
   | "confirmada"
-  | "pendiente"
   | "completada"
+  | "no_asistio"
   | "cancelada"
 
 export type Treatment = {
@@ -20,6 +26,7 @@ export type Appointment = {
   patientName: string
   date: string // ISO yyyy-mm-dd (local)
   time: string // HH:mm (local)
+  endTime: string // HH:mm (local), posterior a `time`
   status: AppointmentStatus
   motivo: string
 }
@@ -55,6 +62,17 @@ export type Patient = {
   clinicalHistory: ClinicalHistory | null
 }
 
+/** Foto de un paciente. La imagen se descarga aparte (`usePhotoFile`). */
+export type PatientPhoto = {
+  /** Nombre del archivo en el servidor; identifica la foto. */
+  name: string
+  patientId: number
+  /** `yyyy-mm-dd` (día local) en que se subió; `""` si no llegó. */
+  uploadedAt: string
+  /** Ruta del API que devuelve la imagen (requiere el header `token`). */
+  url: string
+}
+
 export type PatientInput = {
   name: string
   birthDate: string | null
@@ -70,6 +88,7 @@ export type AppointmentInput = {
   patientId: number
   date: string // yyyy-mm-dd
   time: string // HH:mm
+  endTime: string // HH:mm
   status: AppointmentStatus
   motivo: string
 }
@@ -92,6 +111,17 @@ export type DashboardMetrics = {
   ventasPorMes: number[]
   /** 12 posiciones, índice 0 = enero. */
   citasPorMes: number[]
+  /**
+   * Citas del periodo por estatus del cliente (los desconocidos, como el
+   * antiguo "pendiente", cuentan como `no_asistio`). Suma `consultasTotales`.
+   */
+  citasPorEstatus: Record<AppointmentStatus, number>
+}
+
+/** Ajustes del médico guardados en el servidor (`/ajustes`). */
+export type Ajustes = {
+  /** Las citas confirmadas pasan solas a completadas un día después. */
+  autocompletarCitas: boolean
 }
 
 export type Usuario = {

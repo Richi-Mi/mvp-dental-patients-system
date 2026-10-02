@@ -55,7 +55,10 @@ export function usePatients() {
   })
 
   const patients = React.useMemo(
-    () => applyToPatients(listQuery.data ?? NO_PATIENTS, ownPending, correoMedico ?? ""),
+    () =>
+      applyToPatients(listQuery.data ?? NO_PATIENTS, ownPending, correoMedico ?? "")
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name, "es")),
     [listQuery.data, ownPending, correoMedico],
   )
 
