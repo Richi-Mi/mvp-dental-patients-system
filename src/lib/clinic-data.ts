@@ -3,6 +3,7 @@ import type {
   AppointmentStatus,
   ClinicalQuestionKey,
   Treatment,
+  WorkingHours,
 } from "@/types/clinic"
 
 export const STATUS_META: Record<
@@ -125,16 +126,13 @@ export function calculateAge(birthISO: string, today: string = todayISO()): numb
 
 /**
  * Valida la fecha de nacimiento de los formularios de paciente. Devuelve el
- * mensaje de error o `null` si es válida. Vacía solo es error si `required`.
+ * mensaje de error o `null` si es válida. Es opcional: vacía es válida.
  */
 export function validateBirthDate(
   value: string,
   today: string = todayISO(),
-  required = false,
 ): string | null {
-  if (!value) {
-    return required ? "Indica la fecha de nacimiento del paciente." : null
-  }
+  if (!value) return null
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || toISODateString(parseISO(value)) !== value) {
     return "La fecha de nacimiento no es válida."
   }
@@ -311,19 +309,40 @@ export function onlyOpenDays(dates: string[]): string[] {
 // ---- Horario de atención ----
 
 /**
- * Primera y última hora con atención (24 h). Es el único lugar donde se define
- * el rango: de aquí salen las filas del horario semanal de la agenda y el
- * rango que acepta el `TimePicker`. La última hora es un bloque completo, así
- * que una cita de las 20:45 sigue estando en horario.
+ * Horario de atención mientras el usuario no elija otro en Ajustes (o sus
+ * ajustes no han cargado). Cada usuario tiene el suyo (`useWorkingHours`):
+ * de él salen las filas del horario semanal de la agenda y el rango que
+ * acepta el `TimePicker`. La última hora es un bloque completo, así que con
+ * cierre a las 20 una cita de las 20:45 sigue estando en horario.
  */
-export const OPENING_HOUR = 10
-export const CLOSING_HOUR = 20
+export const DEFAULT_WORKING_HOURS: WorkingHours = { opening: 10, closing: 20 }
+
+/** Rango del slider de Ajustes; el backend valida lo mismo (0–23). */
+export const WORKING_HOURS_LIMITS = { min: 0, max: 23 } as const
+
+/**
+ * Horario que llega del servidor, ya validado: enteros dentro de
+ * `WORKING_HOURS_LIMITS` y apertura <= cierre. Si no, el de por defecto.
+ */
+export function normalizeWorkingHours(opening: unknown, closing: unknown): WorkingHours {
+  const isHour = (value: unknown): value is number =>
+    Number.isInteger(value) &&
+    (value as number) >= WORKING_HOURS_LIMITS.min &&
+    (value as number) <= WORKING_HOURS_LIMITS.max
+  return isHour(opening) && isHour(closing) && opening <= closing
+    ? { opening, closing }
+    : DEFAULT_WORKING_HOURS
+}
 
 /** Las horas del horario, una por fila de la agenda: `[10, 11, … 20]`. */
-export const AGENDA_HOURS: readonly number[] = Array.from(
-  { length: CLOSING_HOUR - OPENING_HOUR + 1 },
-  (_, i) => OPENING_HOUR + i,
-)
+export function agendaHours({ opening, closing }: WorkingHours): number[] {
+  return Array.from({ length: closing - opening + 1 }, (_, i) => opening + i)
+}
+
+/** `"10:00 a 20:00 h"`. */
+export function formatWorkingHours({ opening, closing }: WorkingHours): string {
+  return `${hourLabel(opening)} a ${hourLabel(closing)} h`
+}
 
 /** `10` -> `"10:00"`. */
 export function hourLabel(hour: number): string {
@@ -343,9 +362,26 @@ export const DEFAULT_APPOINTMENT_MINUTES = 60
 
 /**
  * Última hora (0–23) que acepta la hora de fin: una cita del último bloque
- * (hasta las 20:59) ya termina dentro de la hora siguiente.
+ * (hasta las 20:59) ya termina dentro de la hora siguiente. Con cierre a las
+ * 23 el tope es el final del día: una cita no cruza la medianoche.
  */
-export const LAST_END_HOUR = CLOSING_HOUR + 1
+export function lastEndHour({ closing }: WorkingHours): number {
+  return Math.min(closing + 1, 23)
+}
+
+/**
+ * Rango de los selectores de hora de una cita con el horario `hours` y
+ * minutos de `step` en `step`. El inicio va de la apertura al último paso de
+ * la hora de cierre (20:55): así la cita más corta todavía termina dentro de
+ * `lastEndHour`, el tope del fin.
+ */
+export function appointmentTimeBounds(hours: WorkingHours, step: number) {
+  return {
+    firstStart: hourLabel(hours.opening),
+    lastStart: minutesToTime((hours.closing + 1) * 60 - step),
+    lastEnd: minutesToTime(lastEndHour(hours) * 60 + 59),
+  }
+}
 
 /** `HH:mm` -> minutos desde la medianoche, o `null` si no se puede leer. */
 export function timeToMinutes(time: string): number | null {
@@ -365,27 +401,40 @@ export function minutesToTime(minutes: number): string {
 
 /** Hora de fin por defecto de una cita que empieza a `time`. */
 export function defaultEndTime(time: string): string {
-  const start = timeToMinutes(time) ?? OPENING_HOUR * 60
+  const start = timeToMinutes(time) ?? DEFAULT_WORKING_HOURS.opening * 60
   return minutesToTime(start + DEFAULT_APPOINTMENT_MINUTES)
 }
 
 /**
  * Hora de fin cuando la cita pasa de empezar a `start` a empezar a
  * `nextStart`: conserva su duración (la de por defecto si no era válida), sin
- * pasar de la última hora de fin (`LAST_END_HOUR`).
+ * pasar de la última hora de fin del horario (`lastEndHour`).
  */
-export function shiftEndTime(start: string, end: string, nextStart: string): string {
+export function shiftEndTime(
+  start: string,
+  end: string,
+  nextStart: string,
+  hours: WorkingHours,
+): string {
   const from = timeToMinutes(start)
   const to = timeToMinutes(end)
   const duration =
     from !== null && to !== null && to > from ? to - from : DEFAULT_APPOINTMENT_MINUTES
-  const next = timeToMinutes(nextStart) ?? OPENING_HOUR * 60
-  return minutesToTime(Math.min(next + duration, LAST_END_HOUR * 60 + 59))
+  const next = timeToMinutes(nextStart) ?? hours.opening * 60
+  return minutesToTime(Math.min(next + duration, lastEndHour(hours) * 60 + 59))
 }
 
 /** `"10:00 - 11:00"`. */
 export function formatTimeRange(start: string, end: string): string {
   return `${start} - ${end}`
+}
+
+/** Minutos que dura una cita: `90` -> `"1 h 30 min"`, `45` -> `"45 min"`. */
+export function formatDuration(minutes: number): string {
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  if (hours === 0) return `${rest} min`
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`
 }
 
 export type HourSlot = {
@@ -396,18 +445,21 @@ export type HourSlot = {
 
 /**
  * Reparte las citas de un día en los bloques de una hora del horario
- * (`AGENDA_HOURS`), en ese mismo orden. Un bloque puede quedarse vacío o
+ * (`agendaHours`), en ese mismo orden. Un bloque puede quedarse vacío o
  * acumular varias citas (10:15 y 10:45 caen las dos en el de las 10:00).
  *
  * Las citas fuera del horario —registradas antes de fijar el rango, o por un
  * `time` que no se puede leer— se devuelven aparte en vez de forzarlas a una
  * fila que no les toca, igual que `outOfWeek` hace con los días.
  */
-export function groupByHour(appointments: Appointment[]): {
+export function groupByHour(
+  appointments: Appointment[],
+  hours: WorkingHours,
+): {
   slots: HourSlot[]
   outOfHours: Appointment[]
 } {
-  const slots: HourSlot[] = AGENDA_HOURS.map((hour) => ({ hour, items: [] }))
+  const slots: HourSlot[] = agendaHours(hours).map((hour) => ({ hour, items: [] }))
   const byHour = new Map(slots.map((slot) => [slot.hour, slot.items]))
   const outOfHours: Appointment[] = []
 
@@ -429,7 +481,7 @@ export function groupByHour(appointments: Appointment[]): {
  * termina (ver `layoutDay`).
  */
 export type ScheduleBlock = HourSlot & {
-  /** Fila del horario en que empieza (0 = la de `OPENING_HOUR`). */
+  /** Fila del horario en que empieza (0 = la de la hora de apertura). */
   row: number
   /** Filas que ocupa: hasta la hora en que termina la última de sus citas. */
   rowSpan: number
@@ -446,7 +498,7 @@ export type DayLayout = {
   blocks: ScheduleBlock[]
   /** Carriles del día: más de uno solo si hay citas que se enciman. */
   lanes: number
-  /** Una posición por hora de `AGENDA_HOURS`: `true` si alguna cita la ocupa. */
+  /** Una posición por hora de `slots`: `true` si alguna cita la ocupa. */
   busy: boolean[]
   outOfHours: Appointment[]
 }
@@ -458,14 +510,18 @@ export type DayLayout = {
  * tope. Una hora de fin ilegible o que no es posterior al inicio cuenta como
  * una sola fila.
  */
-function rowSpanOf(appointment: Appointment, row: number): number {
+function rowSpanOf(
+  appointment: Appointment,
+  row: number,
+  { opening, closing }: WorkingHours,
+): number {
   const start = timeToMinutes(appointment.time)
   const end = timeToMinutes(appointment.endTime)
   const endRow =
     start !== null && end !== null && end > start
-      ? Math.ceil(end / 60) - OPENING_HOUR
+      ? Math.ceil(end / 60) - opening
       : row + 1
-  return Math.min(Math.max(endRow, row + 1), AGENDA_HOURS.length) - row
+  return Math.min(Math.max(endRow, row + 1), closing - opening + 1) - row
 }
 
 /**
@@ -491,15 +547,15 @@ function endMinuteOf(appointment: Appointment, hour: number): number {
  * enciman (uno termina a las 11:30 y el otro empieza a las 11:30), el segundo
  * se une al primero y sus citas quedan apiladas en el mismo carril.
  */
-export function layoutDay(appointments: Appointment[]): DayLayout {
-  const { slots, outOfHours } = groupByHour(appointments)
+export function layoutDay(appointments: Appointment[], hours: WorkingHours): DayLayout {
+  const { slots, outOfHours } = groupByHour(appointments, hours)
   const blocks: ScheduleBlock[] = []
   // Último bloque de cada carril y el minuto en que termina su última cita.
   const laneTails: { block: ScheduleBlock; end: number }[] = []
 
   slots.forEach((slot, row) => {
     if (slot.items.length === 0) return
-    const rowSpan = Math.max(...slot.items.map((appt) => rowSpanOf(appt, row)))
+    const rowSpan = Math.max(...slot.items.map((appt) => rowSpanOf(appt, row, hours)))
     // Vienen ordenadas por minuto: la primera es la que empieza antes.
     const start = timeToMinutes(slot.items[0].time) ?? slot.hour * 60
     const end = Math.max(...slot.items.map((appt) => endMinuteOf(appt, slot.hour)))
@@ -539,7 +595,7 @@ export function layoutDay(appointments: Appointment[]): DayLayout {
     block.laneSpan = next - block.lane
   }
 
-  const busy = AGENDA_HOURS.map((_, row) =>
+  const busy = slots.map((_, row) =>
     blocks.some((block) => row >= block.row && row < block.row + block.rowSpan),
   )
 

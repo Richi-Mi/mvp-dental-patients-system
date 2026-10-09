@@ -17,15 +17,19 @@ import { Input } from "@/components/ui/input"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { DatePicker } from "@/components/custom/calendar"
 import { ResponsiveDialogContent } from "@/components/custom/responsive-dialog"
-import { TimePicker } from "@/components/custom/time-picker"
+import { MINUTE_STEP, TimePicker } from "@/components/custom/time-picker"
 import { useAgenda } from "@/hooks/useAgenda"
+import { useWorkingHours } from "@/hooks/useAjustes"
 import { useNewAppointmentDialog } from "@/hooks/useNewAppointmentDialog"
 import { usePatients } from "@/hooks/usePatients"
 import {
-    LAST_END_HOUR,
     STATUS_META,
+    appointmentTimeBounds,
+    formatDuration,
     isClosedDay,
+    minutesToTime,
     shiftEndTime,
+    timeToMinutes,
     weekdayName,
 } from "@/lib/clinic-data"
 import { MOBILE_FAB } from "@/lib/responsive"
@@ -81,7 +85,27 @@ export function NewAppointmentDialog() {
         setMedico,
     } = useAgenda()
 
-    const draft = useUiStore((s) => s.appointmentDraft)
+    const hours = useWorkingHours()
+    // Los selectores de hora siguen el horario del usuario (Ajustes).
+    const { firstStart, lastStart, lastEnd } = appointmentTimeBounds(hours, MINUTE_STEP)
+
+    const storedDraft = useUiStore((s) => s.appointmentDraft)
+    // Un alta cuya hora quedó fuera del horario del usuario (el borrador nace a
+    // las 10:00, o el horario cambió en Ajustes) empieza a la hora de apertura.
+    // La cita que se edita conserva la suya aunque esté fuera.
+    const draft =
+        storedDraft.time < firstStart || storedDraft.time > lastStart
+            ? {
+                  ...storedDraft,
+                  time: firstStart,
+                  endTime: shiftEndTime(
+                      storedDraft.time,
+                      storedDraft.endTime,
+                      firstStart,
+                      hours,
+                  ),
+              }
+            : storedDraft
     const setDraft = useUiStore((s) => s.setAppointmentDraft)
     const resetDraft = useUiStore((s) => s.resetAppointmentDraft)
 
@@ -134,6 +158,8 @@ export function NewAppointmentDialog() {
     const closedDay = isClosedDay(values.date)
     // Las dos son `HH:mm` de 24 h, así que se comparan como texto.
     const invalidRange = values.endTime <= values.time
+    const startMinutes = timeToMinutes(values.time) ?? hours.opening * 60
+    const duration = (timeToMinutes(values.endTime) ?? 0) - startMinutes
     // El backend solo rechaza el horario ocupado al crear la cita (ver
     // `findTimeConflict`), así que al editar este aviso es la única red.
     const conflict = findTimeConflict(values.date, values.time, edit?.id)
@@ -304,37 +330,56 @@ export function NewAppointmentDialog() {
                                     />
                                 </Field>
 
-                                <div className="grid grid-cols-2 gap-4">
-                                    <Field>
-                                        <FieldLabel htmlFor="na-time">Hora de inicio</FieldLabel>
-                                        {/* Mover el inicio arrastra el fin: la cita
-                                            conserva su duración (una hora, de entrada). */}
-                                        <TimePicker
-                                            id="na-time"
-                                            label="Hora de inicio"
-                                            value={values.time}
-                                            onChange={(time) =>
-                                                setValues({
-                                                    time,
-                                                    endTime: shiftEndTime(
-                                                        values.time,
-                                                        values.endTime,
+                                <div className="flex flex-col gap-3">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <Field>
+                                            <FieldLabel id="na-time-label" htmlFor="na-time">
+                                                Hora de inicio
+                                            </FieldLabel>
+                                            {/* Mover el inicio arrastra el fin: la cita
+                                                conserva su duración (una hora, de entrada). */}
+                                            <TimePicker
+                                                id="na-time"
+                                                aria-labelledby="na-time-label"
+                                                min={firstStart}
+                                                max={lastStart}
+                                                value={values.time}
+                                                onChange={(time) =>
+                                                    setValues({
                                                         time,
-                                                    ),
-                                                })
-                                            }
-                                        />
-                                    </Field>
-                                    <Field>
-                                        <FieldLabel htmlFor="na-end-time">Hora de fin</FieldLabel>
-                                        <TimePicker
-                                            id="na-end-time"
-                                            label="Hora de fin"
-                                            value={values.endTime}
-                                            maxHour={LAST_END_HOUR}
-                                            onChange={(endTime) => setValues({ endTime })}
-                                        />
-                                    </Field>
+                                                        endTime: shiftEndTime(
+                                                            values.time,
+                                                            values.endTime,
+                                                            time,
+                                                            hours,
+                                                        ),
+                                                    })
+                                                }
+                                            />
+                                        </Field>
+                                        <Field>
+                                            <FieldLabel id="na-end-time-label" htmlFor="na-end-time">
+                                                Hora de fin
+                                            </FieldLabel>
+                                            {/* Un `min` que sigue al inicio deshabilita
+                                                todo lo anterior: la duración nunca llega
+                                                a cero ni queda negativa. */}
+                                            <TimePicker
+                                                id="na-end-time"
+                                                aria-labelledby="na-end-time-label"
+                                                min={minutesToTime(startMinutes + MINUTE_STEP)}
+                                                max={lastEnd}
+                                                invalid={invalidRange}
+                                                value={values.endTime}
+                                                onChange={(endTime) => setValues({ endTime })}
+                                            />
+                                        </Field>
+                                    </div>
+                                    {!invalidRange && (
+                                        <p role="status" className="text-sm text-muted-foreground">
+                                            Duración: {formatDuration(duration)}
+                                        </p>
+                                    )}
                                 </div>
 
                                 {invalidRange && (

@@ -2,8 +2,10 @@ import {
   APPOINTMENT_STATUSES,
   CLINICAL_HISTORY_QUESTIONS,
   defaultEndTime,
+  normalizeWorkingHours,
   toISODateString,
 } from "@/lib/clinic-data"
+import { normalizeFontSize } from "@/lib/font-size"
 import type {
   AjustesDTO,
   CitaDTO,
@@ -14,6 +16,7 @@ import type {
   PacienteDTO,
   TratamientoDTO,
   TratamientoPayload,
+  UpdateAjustesPayload,
   UsuarioDTO,
 } from "@/api/types"
 import type {
@@ -136,7 +139,27 @@ export function toDashboard(dto: DashboardDTO): DashboardMetrics {
 }
 
 export function toAjustes(dto: AjustesDTO): Ajustes {
-  return { autocompletarCitas: dto.autocompletarCitas === true }
+  return {
+    autocompletarCitas: dto.autocompletarCitas === true,
+    workingHours: normalizeWorkingHours(dto.horario?.apertura, dto.horario?.cierre),
+    fontSize: normalizeFontSize(dto.tamanoLetra),
+  }
+}
+
+/** Solo los ajustes que cambian: lo omitido no se manda. */
+export function toAjustesPayload(changes: Partial<Ajustes>): UpdateAjustesPayload {
+  const payload: UpdateAjustesPayload = {}
+  if (changes.autocompletarCitas !== undefined) {
+    payload.autocompletarCitas = changes.autocompletarCitas
+  }
+  if (changes.workingHours) {
+    payload.horario = {
+      apertura: changes.workingHours.opening,
+      cierre: changes.workingHours.closing,
+    }
+  }
+  if (changes.fontSize !== undefined) payload.tamanoLetra = changes.fontSize
+  return payload
 }
 
 export function toUsuario(dto: UsuarioDTO): Usuario {

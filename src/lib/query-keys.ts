@@ -4,7 +4,7 @@ export const queryKeys = {
   auth: {
     me: ["auth", "me"] as const,
   },
-  /** Ajustes del médico; la caché se borra al cerrar sesión, basta una llave. */
+  /** Ajustes del usuario; la caché se borra al cerrar sesión, basta una llave. */
   ajustes: {
     all: ["ajustes"] as const,
   },

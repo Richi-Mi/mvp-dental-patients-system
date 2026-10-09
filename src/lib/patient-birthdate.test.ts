@@ -38,10 +38,7 @@ describe("formatAge", () => {
 })
 
 describe("validateBirthDate", () => {
-  test("vacía solo es error si es obligatoria", () => {
-    expect(validateBirthDate("", TODAY, true)).toBe(
-      "Indica la fecha de nacimiento del paciente.",
-    )
+  test("vacía es válida (la fecha es opcional)", () => {
     expect(validateBirthDate("", TODAY)).toBeNull()
   })
 

@@ -183,3 +183,13 @@
     inset: min(0px, calc(50% - 1.375rem));
   }
 }
+
+/*
+ * Capas: los diálogos van en z-50 y un popover con ese mismo valor queda
+ * detrás del diálogo (ver el calendario, en z-60). El Positioner de
+ * `ui/popover.tsx`, que no se edita a mano, trae `z-50` fijo; esta regla va
+ * fuera de `@layer` para ganarle a esa utilidad.
+ */
+:where(div):has(> [data-slot="popover-content"]) {
+  z-index: 60;
+}

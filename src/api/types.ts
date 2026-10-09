@@ -134,8 +134,8 @@ export type CreatePacientePayload = {
   sexo: string
   cp: string
   direccion: string
-  /** `YYYY-MM-DD`, obligatoria al crear. */
-  fecha_nacimiento: string
+  /** `YYYY-MM-DD`; omitida o `null` = sin fecha de nacimiento. */
+  fecha_nacimiento?: string | null
   correo: string
   telefono: string
   notas?: string
@@ -189,13 +189,20 @@ export type DashboardDTO = {
 /** Sin `month` responde con todo el año. */
 export type DashboardQuery = { year?: number; month?: number }
 
-/** `GET /ajustes` — ajustes del médico autenticado (solo rol `medico`). */
+/** `GET /ajustes` — ajustes del usuario autenticado (médico o asistente). */
 export type AjustesDTO = {
   /** Las citas `confirmada` de hace más de 24 h pasan solas a `completada`. */
   autocompletarCitas: boolean
+  /** Primera y última hora (0–23) de la agenda; `apertura <= cierre`. */
+  horario: { apertura: number; cierre: number }
+  /** Porcentaje del tamaño de letra del navegador (90–130, pasos de 5). */
+  tamanoLetra: number
 }
 
-/** `PUT /ajustes` — campo omitido = no cambia. */
+/**
+ * `PUT /ajustes` — campo omitido = no cambia; `horario` va completo. Solo un
+ * médico puede mandar `autocompletarCitas` (un asistente recibe 403).
+ */
 export type UpdateAjustesPayload = Partial<AjustesDTO>
 
 /** Respuesta de `PUT /ajustes`. */

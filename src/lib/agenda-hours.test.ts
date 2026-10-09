@@ -1,16 +1,25 @@
 import { describe, expect, test } from "bun:test"
 
 import {
-  AGENDA_HOURS,
-  CLOSING_HOUR,
-  OPENING_HOUR,
+  DEFAULT_WORKING_HOURS,
+  agendaHours,
   defaultEndTime,
+  formatWorkingHours,
   groupByHour,
   hourLabel,
   hourOf,
   layoutDay,
+  normalizeWorkingHours,
 } from "@/lib/clinic-data"
 import type { Appointment } from "@/types/clinic"
+
+// Casi todo se prueba con el horario por defecto, de 10 a 20 h.
+const HOURS = DEFAULT_WORKING_HOURS
+const OPENING_HOUR = HOURS.opening
+const CLOSING_HOUR = HOURS.closing
+const AGENDA_HOURS = agendaHours(HOURS)
+const group = (appointments: Appointment[]) => groupByHour(appointments, HOURS)
+const dayLayout = (appointments: Appointment[]) => layoutDay(appointments, HOURS)
 
 const cita = (time: string, endTime = defaultEndTime(time)): Appointment => ({
   id: time,
@@ -30,11 +39,43 @@ const row = (hour: number) => hour - OPENING_HOUR
 const at = (slots: ReturnType<typeof groupByHour>["slots"], hour: number) =>
   slots.find((slot) => slot.hour === hour)?.items.map((c) => c.time)
 
-describe("AGENDA_HOURS", () => {
+describe("agendaHours", () => {
   test("cubre el horario completo, una hora por fila", () => {
     expect(AGENDA_HOURS[0]).toBe(OPENING_HOUR)
     expect(AGENDA_HOURS.at(-1)).toBe(CLOSING_HOUR)
     expect(AGENDA_HOURS.length).toBe(CLOSING_HOUR - OPENING_HOUR + 1)
+  })
+
+  test("sigue el horario de cada usuario", () => {
+    expect(agendaHours({ opening: 8, closing: 12 })).toEqual([8, 9, 10, 11, 12])
+    expect(agendaHours({ opening: 15, closing: 15 })).toEqual([15])
+  })
+
+  test("formatWorkingHours lo lee como rango", () => {
+    expect(formatWorkingHours(HOURS)).toBe("10:00 a 20:00 h")
+    expect(formatWorkingHours({ opening: 7, closing: 13 })).toBe("07:00 a 13:00 h")
+  })
+})
+
+describe("normalizeWorkingHours", () => {
+  test("respeta un horario válido", () => {
+    expect(normalizeWorkingHours(8, 18)).toEqual({ opening: 8, closing: 18 })
+    expect(normalizeWorkingHours(0, 23)).toEqual({ opening: 0, closing: 23 })
+    expect(normalizeWorkingHours(12, 12)).toEqual({ opening: 12, closing: 12 })
+  })
+
+  test("lo que no es un horario válido vale el de por defecto", () => {
+    for (const [opening, closing] of [
+      [18, 8],
+      [-1, 10],
+      [10, 24],
+      [9.5, 18],
+      ["8", 18],
+      [undefined, undefined],
+      [null, 20],
+    ]) {
+      expect(normalizeWorkingHours(opening, closing)).toEqual(DEFAULT_WORKING_HOURS)
+    }
   })
 })
 
@@ -53,26 +94,26 @@ describe("hourLabel / hourOf", () => {
 
 describe("groupByHour", () => {
   test("deja una fila por hora aunque no haya citas", () => {
-    const { slots, outOfHours } = groupByHour([])
+    const { slots, outOfHours } = group([])
     expect(slots.map((slot) => slot.hour)).toEqual([...AGENDA_HOURS])
     expect(slots.every((slot) => slot.items.length === 0)).toBe(true)
     expect(outOfHours).toEqual([])
   })
 
   test("apila las citas simultáneas en su bloque, ordenadas por minuto", () => {
-    const { slots } = groupByHour([cita("10:45"), cita("11:00"), cita("10:15")])
+    const { slots } = group([cita("10:45"), cita("11:00"), cita("10:15")])
     expect(at(slots, 10)).toEqual(["10:15", "10:45"])
     expect(at(slots, 11)).toEqual(["11:00"])
   })
 
   test("la última hora es un bloque completo", () => {
-    const { slots, outOfHours } = groupByHour([cita("20:45")])
+    const { slots, outOfHours } = group([cita("20:45")])
     expect(at(slots, CLOSING_HOUR)).toEqual(["20:45"])
     expect(outOfHours).toEqual([])
   })
 
   test("las citas fuera del horario se devuelven aparte, no en una fila ajena", () => {
-    const { slots, outOfHours } = groupByHour([
+    const { slots, outOfHours } = group([
       cita("21:30"),
       cita("09:00"),
       cita("sin hora"),
@@ -92,33 +133,33 @@ describe("layoutDay", () => {
   }
 
   test("un día sin citas tiene todas las horas libres y un solo carril", () => {
-    const layout = layoutDay([])
+    const layout = dayLayout([])
     expect(layout.blocks).toEqual([])
     expect(layout.lanes).toBe(1)
     expect(layout.busy).toEqual(AGENDA_HOURS.map(() => false))
   })
 
   test("una cita abarca las filas de las horas que dura", () => {
-    const layout = layoutDay([cita("10:00", "12:00")])
+    const layout = dayLayout([cita("10:00", "12:00")])
     expect(blockAt(layout, 10)).toEqual({ row: 0, rowSpan: 2, lane: 0, laneSpan: 1 })
     expect(layout.busy.slice(0, 3)).toEqual([true, true, false])
   })
 
   test("redondea a horas completas: ocupa todas las horas que toca", () => {
-    expect(blockAt(layoutDay([cita("10:30", "11:15")]), 10)?.rowSpan).toBe(2)
-    expect(blockAt(layoutDay([cita("10:00", "10:30")]), 10)?.rowSpan).toBe(1)
-    expect(blockAt(layoutDay([cita("10:00", "11:00")]), 10)?.rowSpan).toBe(1)
+    expect(blockAt(dayLayout([cita("10:30", "11:15")]), 10)?.rowSpan).toBe(2)
+    expect(blockAt(dayLayout([cita("10:00", "10:30")]), 10)?.rowSpan).toBe(1)
+    expect(blockAt(dayLayout([cita("10:00", "11:00")]), 10)?.rowSpan).toBe(1)
   })
 
   test("las citas de la misma hora van en un bloque que llega hasta la que termina más tarde", () => {
-    const layout = layoutDay([cita("10:30", "12:00"), cita("10:00", "10:30")])
+    const layout = dayLayout([cita("10:30", "12:00"), cita("10:00", "10:30")])
     expect(layout.blocks).toHaveLength(1)
     expect(layout.blocks[0].items.map((c) => c.time)).toEqual(["10:00", "10:30"])
     expect(blockAt(layout, 10)?.rowSpan).toBe(2)
   })
 
   test("una cita que empieza mientras otra sigue va en otro carril; las demás usan todo el ancho", () => {
-    const layout = layoutDay([
+    const layout = dayLayout([
       cita("10:00", "12:00"),
       cita("11:00", "12:00"),
       cita("14:00", "15:00"),
@@ -130,7 +171,7 @@ describe("layoutDay", () => {
   })
 
   test("las citas que comparten una hora sin encimarse van en el mismo carril", () => {
-    const layout = layoutDay([
+    const layout = dayLayout([
       cita("10:00", "10:10"),
       cita("10:10", "10:30"),
       cita("10:30", "11:30"),
@@ -151,14 +192,14 @@ describe("layoutDay", () => {
   })
 
   test("un bloque que se une a otro alarga sus filas hasta donde termina", () => {
-    const layout = layoutDay([cita("10:00", "11:30"), cita("11:30", "13:00")])
+    const layout = dayLayout([cita("10:00", "11:30"), cita("11:30", "13:00")])
     expect(layout.lanes).toBe(1)
     expect(blockAt(layout, 10)).toEqual({ row: row(10), rowSpan: 3, lane: 0, laneSpan: 1 })
     expect(layout.busy.slice(0, 4)).toEqual([true, true, true, false])
   })
 
   test("un carril se reutiliza cuando termina la cita que lo ocupaba", () => {
-    const layout = layoutDay([
+    const layout = dayLayout([
       cita("10:00", "12:00"),
       cita("11:00", "13:00"),
       cita("12:00", "13:00"),
@@ -168,7 +209,7 @@ describe("layoutDay", () => {
   })
 
   test("una cita que termina después del cierre no pasa de la última fila", () => {
-    const layout = layoutDay([cita("20:30", "21:45")])
+    const layout = dayLayout([cita("20:30", "21:45")])
     expect(blockAt(layout, CLOSING_HOUR)).toEqual({
       row: row(CLOSING_HOUR),
       rowSpan: 1,
@@ -178,12 +219,26 @@ describe("layoutDay", () => {
   })
 
   test("una hora de fin que no es posterior al inicio ocupa solo su fila", () => {
-    expect(blockAt(layoutDay([cita("12:00", "11:00")]), 12)?.rowSpan).toBe(1)
-    expect(blockAt(layoutDay([cita("12:00", "")]), 12)?.rowSpan).toBe(1)
+    expect(blockAt(dayLayout([cita("12:00", "11:00")]), 12)?.rowSpan).toBe(1)
+    expect(blockAt(dayLayout([cita("12:00", "")]), 12)?.rowSpan).toBe(1)
+  })
+
+  test("sigue el horario del usuario: sus filas y lo que queda fuera", () => {
+    const morning = { opening: 8, closing: 12 }
+    const layout = layoutDay(
+      [cita("08:00", "09:30"), cita("12:30", "14:00"), cita("13:00")],
+      morning,
+    )
+    expect(layout.slots.map((slot) => slot.hour)).toEqual([8, 9, 10, 11, 12])
+    expect(blockAt(layout, 8)).toEqual({ row: 0, rowSpan: 2, lane: 0, laneSpan: 1 })
+    // Termina después del cierre: no pasa de la última fila.
+    expect(blockAt(layout, 12)).toEqual({ row: 4, rowSpan: 1, lane: 0, laneSpan: 1 })
+    expect(layout.busy).toEqual([true, true, false, false, true])
+    expect(layout.outOfHours.map((c) => c.time)).toEqual(["13:00"])
   })
 
   test("las citas fuera del horario no ocupan filas", () => {
-    const layout = layoutDay([cita("21:30"), cita("09:00", "10:30")])
+    const layout = dayLayout([cita("21:30"), cita("09:00", "10:30")])
     expect(layout.blocks).toEqual([])
     expect(layout.busy.every((busy) => !busy)).toBe(true)
     expect(layout.outOfHours.map((c) => c.time)).toEqual(["09:00", "21:30"])

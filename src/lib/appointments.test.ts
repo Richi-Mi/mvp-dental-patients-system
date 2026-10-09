@@ -2,9 +2,12 @@ import { describe, expect, test } from "bun:test"
 
 import type { CitaDTO } from "@/api/types"
 import {
-  LAST_END_HOUR,
+  DEFAULT_WORKING_HOURS,
+  appointmentTimeBounds,
   defaultEndTime,
+  formatDuration,
   formatTimeRange,
+  lastEndHour,
   minutesToTime,
   shiftEndTime,
   timeToMinutes,
@@ -34,16 +37,48 @@ describe("defaultEndTime / shiftEndTime", () => {
   })
 
   test("mover el inicio conserva la duración", () => {
-    expect(shiftEndTime("10:00", "11:30", "12:00")).toBe("13:30")
-    expect(shiftEndTime("10:00", "11:00", "10:15")).toBe("11:15")
+    expect(shiftEndTime("10:00", "11:30", "12:00", DEFAULT_WORKING_HOURS)).toBe("13:30")
+    expect(shiftEndTime("10:00", "11:00", "10:15", DEFAULT_WORKING_HOURS)).toBe("11:15")
   })
 
   test("si la duración anterior no era válida, vuelve a la de por defecto", () => {
-    expect(shiftEndTime("10:00", "09:00", "12:00")).toBe("13:00")
+    expect(shiftEndTime("10:00", "09:00", "12:00", DEFAULT_WORKING_HOURS)).toBe("13:00")
   })
 
   test("no pasa de la última hora de fin", () => {
-    expect(shiftEndTime("10:00", "13:00", "20:30")).toBe(`${LAST_END_HOUR}:59`)
+    expect(shiftEndTime("10:00", "13:00", "20:30", DEFAULT_WORKING_HOURS)).toBe("21:59")
+    expect(shiftEndTime("10:00", "13:00", "12:00", { opening: 8, closing: 13 })).toBe(
+      "14:59",
+    )
+  })
+
+  test("appointmentTimeBounds: de la apertura al último paso de la hora de cierre", () => {
+    expect(appointmentTimeBounds(DEFAULT_WORKING_HOURS, 5)).toEqual({
+      firstStart: "10:00",
+      lastStart: "20:55",
+      lastEnd: "21:59",
+    })
+    expect(appointmentTimeBounds({ opening: 7, closing: 23 }, 5)).toEqual({
+      firstStart: "07:00",
+      lastStart: "23:55",
+      lastEnd: "23:59",
+    })
+  })
+
+  test("la última hora de fin es la siguiente al cierre, sin cruzar la medianoche", () => {
+    expect(lastEndHour(DEFAULT_WORKING_HOURS)).toBe(21)
+    expect(lastEndHour({ opening: 8, closing: 22 })).toBe(23)
+    expect(lastEndHour({ opening: 8, closing: 23 })).toBe(23)
+    expect(shiftEndTime("22:00", "23:00", "23:30", { opening: 8, closing: 23 })).toBe(
+      "23:59",
+    )
+  })
+
+  test("formatDuration lee los minutos en horas y minutos", () => {
+    expect(formatDuration(45)).toBe("45 min")
+    expect(formatDuration(60)).toBe("1 h")
+    expect(formatDuration(90)).toBe("1 h 30 min")
+    expect(formatDuration(125)).toBe("2 h 5 min")
   })
 
   test("formatTimeRange arma el rango de la tarjeta", () => {

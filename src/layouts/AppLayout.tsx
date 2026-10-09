@@ -20,6 +20,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { useAuth } from "@/hooks/useAuth"
+import { useSyncFontSize } from "@/hooks/useFontSize"
 import { useOfflineSync } from "@/hooks/useOfflineSync"
 import { cn } from "@/lib/utils"
 import type { Usuario } from "@/types/clinic"
@@ -30,7 +31,7 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, medicoOnly: true },
   { to: "/pacientes", label: "Pacientes", icon: Users },
   { to: "/usuarios", label: "Asistentes", icon: UserCog, medicoOnly: true },
-  { to: "/ajustes", label: "Ajustes", icon: Settings, medicoOnly: true },
+  { to: "/ajustes", label: "Ajustes", icon: Settings },
 ] as const
 
 type NavItem = (typeof NAV)[number]
@@ -62,6 +63,10 @@ export function AppLayout() {
   // internet (ver `useOfflineSync`; el botón de la agenda reutiliza el mismo
   // hook solo para mostrar su estado).
   useOfflineSync()
+  // También una sola vez: trae los ajustes del usuario al entrar, así el
+  // tamaño de letra guardado en el servidor se aplica aunque sea la primera
+  // vez que entra en este dispositivo.
+  useSyncFontSize()
 
   const nav = NAV.filter((item) => !("medicoOnly" in item) || isMedico)
 

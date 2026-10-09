@@ -24,7 +24,14 @@ import type {
   Patient,
   PatientInput,
   Treatment,
+  WorkingHours,
 } from "@/types/clinic"
+
+/**
+ * El backend no conoce el horario de cada usuario: al mover una cita sin hora
+ * de fin, su único tope es el final del día.
+ */
+const WHOLE_DAY: WorkingHours = { opening: 0, closing: 23 }
 
 /** Cambios al expediente: `PUT /pacientes/:id` (los tratamientos reemplazan la lista). */
 export type PatientChanges = Partial<PatientInput> & { treatments?: Treatment[] }
@@ -345,7 +352,7 @@ export function applyAppointmentChanges(
   // Como en el backend, mover la cita sin indicar la hora de fin conserva su
   // duración (p. ej. un cambio encolado antes de existir la hora de fin).
   if (input.time !== undefined && input.endTime === undefined) {
-    next.endTime = shiftEndTime(appointment.time, appointment.endTime, input.time)
+    next.endTime = shiftEndTime(appointment.time, appointment.endTime, input.time, WHOLE_DAY)
   }
   // Igual que en `appointmentFromCreate`: un estatus encolado puede ser antiguo.
   if (input.status !== undefined) next.status = normalizeStatus(input.status)

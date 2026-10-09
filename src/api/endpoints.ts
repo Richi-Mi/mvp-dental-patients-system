@@ -22,7 +22,7 @@ export const ENDPOINTS = {
     foto: (id: number, nombre: string) =>
       `/pacientes/${id}/fotos/${encodeURIComponent(nombre)}`,
   },
-  /** `GET` lee y `PUT` guarda los ajustes del médico autenticado. */
+  /** `GET` lee y `PUT` guarda los ajustes del usuario autenticado. */
   ajustes: {
     root: "/ajustes",
   },

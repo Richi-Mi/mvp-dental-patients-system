@@ -76,7 +76,7 @@ Formas de salida más comunes (ya sin `password` y con relaciones aplanadas). Lo
   id: number,
   cp: string | null,
   direccion: string | null,
-  fecha_nacimiento: string | null, // "YYYY-MM-DD"; null en pacientes anteriores al cambio
+  fecha_nacimiento: string | null, // "YYYY-MM-DD"; null si no se capturó (o en pacientes anteriores al cambio)
   correo: string | null,
   telefono: string | null,
   notas: string | null,
@@ -128,7 +128,9 @@ Formas de salida más comunes (ya sin `password` y con relaciones aplanadas). Lo
 **Ajustes**
 ```ts
 {
-  autocompletarCitas: boolean   // false si el médico nunca guardó sus ajustes
+  autocompletarCitas: boolean                    // false si nunca se guardó; solo tiene efecto en un médico
+  horario: { apertura: number; cierre: number }  // primera y última hora de la agenda (0–23); { 10, 20 } por defecto
+  tamanoLetra: number                            // porcentaje del tamaño de letra (90–130, pasos de 5); 100 por defecto
 }
 ```
 
@@ -149,7 +151,7 @@ Formas de salida más comunes (ya sin `password` y con relaciones aplanadas). Lo
 **Foto**
 ```ts
 {
-  img_name: string,      // PK y nombre del archivo: `${id_paciente}_${UUID v7}.webp`
+  img_name: string,      // PK e identificador de la foto: `${id_paciente}_${UUID v7}.webp`
   fecha_subida: string,  // ISO; las fotos de una misma carga comparten la fecha
   id_paciente: number,
   url: string            // ruta del API que devuelve la imagen: /pacientes/:id/fotos/:img_name
@@ -377,7 +379,7 @@ Crea un paciente nuevo.
 | `sexo` | `string` | Sí | |
 | `cp` | `string \| null` | No | Dato de contacto (ver nota abajo). |
 | `direccion` | `string \| null` | No | Dato de contacto. |
-| `fecha_nacimiento` | `string` (`YYYY-MM-DD`) | Sí | Si falta o no es una fecha válida, `422` con `{ message }`. |
+| `fecha_nacimiento` | `string` (`YYYY-MM-DD`) \| `null` | No | Omitida o `null`: el paciente queda sin fecha. Si no es una fecha válida, `422` con `{ message }`. |
 | `correo` | `string \| null` | No | Dato de contacto. |
 | `telefono` | `string \| null` | No | Dato de contacto. |
 | `notas` | `string` | No | |
@@ -490,7 +492,7 @@ Devuelve la imagen (la `url` de cada `Foto`).
 - **Headers:** `token: <jwt>`.
 - **Params:** `id` (`number`), `nombre` (`img_name` de la foto).
 - **Respuesta `200`:** la imagen, `Content-Type: image/webp`, con `Cache-Control: private, max-age=31536000, immutable` (el contenido de un nombre nunca cambia).
-- **Errores:** `404` si la foto no existe o es de otro paciente; `422` si `nombre` no tiene la forma de un `img_name`.
+- **Errores:** `404` si la foto no existe, es de otro paciente o el paciente está dado de baja (sus fotos se conservan, pero ya no se sirven); `422` si `nombre` no tiene la forma de un `img_name`.
 
 ### `DELETE /pacientes/:id/fotos/:nombre`
 
@@ -500,7 +502,7 @@ Elimina la foto y su archivo.
 - **Headers:** `token: <jwt>`.
 - **Params:** `id` (`number`), `nombre` (`img_name`).
 - **Respuesta `200`:** la `Foto` eliminada.
-- **Errores:** `404` si la foto no existe o es de otro paciente; `422` si `nombre` no tiene la forma de un `img_name`.
+- **Errores:** `404` si la foto no existe, es de otro paciente o el paciente está dado de baja (sus fotos se conservan, pero ya no se sirven); `422` si `nombre` no tiene la forma de un `img_name`.
 
 ---
 
@@ -687,38 +689,43 @@ Actualiza el historial clínico de un paciente. Actualización parcial por pregu
 
 ## `/ajustes`
 
-Ajustes del médico autenticado que viven en el servidor. Todas las rutas requieren header `token` y rol `medico`. El tamaño de letra de la pantalla Ajustes **no** está aquí: se guarda en el navegador.
+Ajustes del usuario autenticado (médico o asistente): cada usuario tiene los suyos, iguales en todos sus dispositivos. Todas las rutas requieren header `token`.
 
 ### `GET /ajustes`
 
-- **Auth:** sí. **Rol:** `medico`.
+- **Auth:** sí. **Rol:** cualquiera.
 - **Headers:** `token: <jwt>`.
-- **Respuesta `200`:** objeto `Ajustes`. Si el médico nunca los guardó, los valores por defecto (`{ "autocompletarCitas": false }`).
-- **Errores:** `401` sin token válido; `403` si no es médico.
+- **Respuesta `200`:** objeto `Ajustes`. Si el usuario nunca los guardó, los valores por defecto:
+```json
+{ "autocompletarCitas": false, "horario": { "apertura": 10, "cierre": 20 }, "tamanoLetra": 100 }
+```
+- **Errores:** `401` sin token válido.
 
 ### `PUT /ajustes`
 
-Guarda los ajustes del médico. Un campo omitido no cambia.
+Guarda los ajustes del usuario. Un campo omitido no cambia.
 
-- **Auth:** sí. **Rol:** `medico`.
+- **Auth:** sí. **Rol:** cualquiera; `autocompletarCitas` solo `medico`.
 - **Headers:** `token: <jwt>`.
 - **Body:**
 
 | Campo | Tipo | Requerido | Notas |
 |---|---|---|---|
-| `autocompletarCitas` | `boolean` | No | Activo: las citas `confirmada` cuya `fecha_cita` fue hace más de 24 h pasan a `completada`. Las de otro estatus no se tocan. |
+| `autocompletarCitas` | `boolean` | No | Solo un médico (un asistente recibe `403`). Activo: las citas `confirmada` cuya `fecha_cita` fue hace más de 24 h pasan a `completada`. Las de otro estatus no se tocan. |
+| `horario` | `{ apertura: number, cierre: number }` | No | Va completo. Enteros de 0 a 23, `apertura <= cierre`. La última hora es un bloque completo: con `cierre: 20` se puede agendar hasta las 20:55. El backend no restringe las citas con él: lo usa el frontend para la agenda y el diálogo de cita. |
+| `tamanoLetra` | `number` | No | Entero de 90 a 130, múltiplo de 5. |
 
 ```json
-{ "autocompletarCitas": true }
+{ "horario": { "apertura": 8, "cierre": 18 }, "tamanoLetra": 115 }
 ```
 
-- **Respuesta `200`:** `Ajustes` más `citasCompletadas`, las citas que se completaron al guardar (0 si quedó desactivado):
+- **Respuesta `200`:** `Ajustes` completos más `citasCompletadas`, las citas que se completaron al guardar (0 si la petición no activó el autocompletado):
 ```json
-{ "autocompletarCitas": true, "citasCompletadas": 12 }
+{ "autocompletarCitas": true, "horario": { "apertura": 8, "cierre": 18 }, "tamanoLetra": 115, "citasCompletadas": 0 }
 ```
-- **Errores:** `401` sin token válido; `403` si no es médico; `422` si `autocompletarCitas` no es booleano (`"autocompletarCitas debe ser true o false"`).
+- **Errores:** `401` sin token válido; `403` si un asistente manda `autocompletarCitas`; `400` si `horario.apertura` es posterior a `horario.cierre` (`"La hora de apertura no puede ser posterior a la de cierre"`); `422` si un campo no es válido (`"autocompletarCitas debe ser true o false"`, `"horario.cierre debe ser una hora entera de 0 a 23"`, `"tamanoLetra debe ser un entero de 90 a 130 en pasos de 5"`).
 
-> Al activarlo, el backend completa en ese momento **todas** las citas confirmadas vencidas del médico, también las antiguas; después lo repite al arrancar el servidor y cada hora. Desactivarlo no deshace nada.
+> Al activar el autocompletado (`autocompletarCitas: true`), el backend completa en ese momento **todas** las citas confirmadas vencidas del médico, también las antiguas; después lo repite al arrancar el servidor y cada hora. Desactivarlo no deshace nada. Guardar otro ajuste con el autocompletado ya activo no toca las citas.
 
 ---
 

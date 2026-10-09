@@ -62,7 +62,7 @@ export function PatientFormView() {
     e.preventDefault()
     if (!form.name.trim() || isCreating) return
 
-    const dateError = validateBirthDate(form.birthDate, today, true)
+    const dateError = validateBirthDate(form.birthDate, today)
     setBirthDateError(dateError)
     if (dateError) return
 
@@ -106,8 +106,8 @@ export function PatientFormView() {
         <CardHeader>
           <CardTitle className="text-base">Datos del expediente</CardTitle>
           <CardDescription>
-            El paciente queda asignado a tu usuario. El nombre y la fecha de
-            nacimiento son obligatorios; el resto se puede completar después.
+            El paciente queda asignado a tu usuario. Solo el nombre es
+            obligatorio; el resto se puede completar después.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -134,6 +134,7 @@ export function PatientFormView() {
                     captionLayout="dropdown"
                     isDateDisabled={(date) => date > today}
                     placeholder="Selecciona la fecha"
+                    clearable
                     value={form.birthDate}
                     onChange={(date) => {
                       set("birthDate")(date)

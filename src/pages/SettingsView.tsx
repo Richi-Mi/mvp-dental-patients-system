@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Loader2, RotateCcw, ShieldAlert } from "lucide-react"
+import { Loader2, RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -20,31 +20,34 @@ import {
 } from "@/components/ui/field"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
+import { HourRangeSlider } from "@/components/custom/hour-range-slider"
+import { MINUTE_STEP } from "@/components/custom/time-picker"
 import { isNetworkError } from "@/api/client"
 import { useAjustes } from "@/hooks/useAjustes"
 import { useAuth } from "@/hooks/useAuth"
 import { useFontSize } from "@/hooks/useFontSize"
 import { useIsMobile } from "@/hooks/useMediaQuery"
-import { formatPercent } from "@/lib/clinic-data"
+import {
+  DEFAULT_WORKING_HOURS,
+  WORKING_HOURS_LIMITS,
+  appointmentTimeBounds,
+  formatPercent,
+  formatWorkingHours,
+  hourLabel,
+} from "@/lib/clinic-data"
 import { FONT_SIZE } from "@/lib/font-size"
 import { MOBILE_CARD } from "@/lib/responsive"
 import { cn } from "@/lib/utils"
+import type { WorkingHours } from "@/types/clinic"
 
+/**
+ * Los ajustes se guardan en el servidor, por usuario: cada médico y cada
+ * asistente tiene los suyos, iguales en todos sus dispositivos. Cambiarlos
+ * necesita conexión (no pasan por la cola sin conexión).
+ */
 export function SettingsView() {
   const { isMedico } = useAuth()
-
-  // El loader de la ruta ya bloquea el acceso; esto cubre el caso de que el
-  // rol cambie con la vista abierta.
-  if (!isMedico) {
-    return (
-      <div className="flex flex-col items-center gap-2 py-16 text-center">
-        <ShieldAlert className="size-6 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">
-          Solo un usuario de tipo médico puede cambiar los ajustes.
-        </p>
-      </div>
-    )
-  }
+  const { error } = useAjustes()
 
   return (
     <div className="flex flex-col gap-6">
@@ -57,22 +60,49 @@ export function SettingsView() {
         </p>
       </div>
 
+      {error && (
+        <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {error instanceof Error
+            ? error.message
+            : "No se pudieron cargar los ajustes."}
+        </p>
+      )}
+
       <FontSizeCard />
-      <AppointmentsCard />
+      <WorkingHoursCard />
+      {/* Las citas que se completan solas son las del médico. */}
+      {isMedico && <AppointmentsCard />}
     </div>
   )
 }
 
+/** Mensaje del toast cuando un ajuste no se pudo guardar. */
+function saveErrorMessage(err: unknown): string {
+  if (isNetworkError(err)) {
+    return "Sin conexión: este ajuste solo se puede cambiar con internet."
+  }
+  return err instanceof Error ? err.message : "No se pudo guardar el ajuste."
+}
+
 /**
- * Tamaño de letra de este usuario en este dispositivo. Se aplica al soltar el
- * slider (o con cada tecla): aplicarlo mientras se arrastra cambiaría el ancho
- * del propio slider bajo el dedo. Mientras tanto, la muestra lo adelanta.
+ * Tamaño de letra de este usuario. Se aplica y se guarda al soltar el slider
+ * (o con cada tecla): aplicarlo mientras se arrastra cambiaría el ancho del
+ * propio slider bajo el dedo. Mientras tanto, la muestra lo adelanta.
  */
 function FontSizeCard() {
-  const { fontSize, isDefault, setFontSize, resetFontSize } = useFontSize()
+  const { fontSize, isDefault, isSaving, setFontSize } = useFontSize()
   const isMobile = useIsMobile()
   const [draft, setDraft] = React.useState<number | null>(null)
   const titleId = React.useId()
+
+  async function save(percent: number) {
+    setDraft(null)
+    try {
+      await setFontSize(percent)
+    } catch (err) {
+      toast.error(saveErrorMessage(err))
+    }
+  }
 
   // En teléfono no baja de 100 % (iOS hace zoom en campos de menos de 16px).
   const min = isMobile ? FONT_SIZE.phoneMin : FONT_SIZE.min
@@ -81,11 +111,14 @@ function FontSizeCard() {
   return (
     <Card className={cn("border-border/70", MOBILE_CARD)}>
       <CardHeader>
-        <CardTitle id={titleId} className="text-base">
+        <CardTitle id={titleId} className="flex items-center gap-2 text-base">
           Tamaño de letra
+          {isSaving && (
+            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+          )}
         </CardTitle>
         <CardDescription>
-          Solo para tu usuario en este dispositivo.
+          Para tu usuario, en todos tus dispositivos.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
@@ -104,10 +137,9 @@ function FontSizeCard() {
             onValueChange={(value) =>
               setDraft(Array.isArray(value) ? value[0] : value)
             }
-            onValueCommitted={(value) => {
-              setFontSize(Array.isArray(value) ? value[0] : value)
-              setDraft(null)
-            }}
+            onValueCommitted={(value) =>
+              void save(Array.isArray(value) ? value[0] : value)
+            }
             className="flex-1 py-3"
           />
           <span aria-hidden className="text-xl font-medium text-muted-foreground">
@@ -131,10 +163,7 @@ function FontSizeCard() {
             variant="outline"
             size="sm"
             disabled={isDefault && draft === null}
-            onClick={() => {
-              setDraft(null)
-              resetFontSize()
-            }}
+            onClick={() => void save(FONT_SIZE.default)}
           >
             <RotateCcw data-icon="inline-start" />
             Restablecer
@@ -145,9 +174,93 @@ function FontSizeCard() {
   )
 }
 
-/** Ajustes de la agenda guardados en el servidor: necesitan conexión. */
+/**
+ * Horario de atención del usuario: las filas de su agenda y las horas que se
+ * pueden elegir al agendar. Se guarda al soltar el slider; mientras se
+ * arrastra solo cambia lo que se lee aquí.
+ */
+function WorkingHoursCard() {
+  const { ajustes, isLoading, updateAjustes, isUpdating } = useAjustes()
+  const hours = ajustes?.workingHours ?? DEFAULT_WORKING_HOURS
+  const [draft, setDraft] = React.useState<WorkingHours | null>(null)
+  const shown = draft ?? hours
+  const { lastStart } = appointmentTimeBounds(shown, MINUTE_STEP)
+  const titleId = React.useId()
+  const descriptionId = React.useId()
+
+  async function save([opening, closing]: [number, number]) {
+    setDraft(null)
+    if (opening === hours.opening && closing === hours.closing) return
+    const next = { opening, closing }
+    try {
+      await updateAjustes({ workingHours: next })
+      toast.success(`Horario guardado: de ${formatWorkingHours(next)}.`)
+    } catch (err) {
+      toast.error(saveErrorMessage(err))
+    }
+  }
+
+  return (
+    <Card className={cn("border-border/70", MOBILE_CARD)}>
+      <CardHeader>
+        <CardTitle id={titleId} className="flex items-center gap-2 text-base">
+          Horario de atención
+          {(isLoading || isUpdating) && (
+            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+          )}
+        </CardTitle>
+        <CardDescription id={descriptionId}>
+          Las horas de tu agenda y las que se pueden elegir al agendar una
+          cita. Para tu usuario, en todos tus dispositivos.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-5">
+        <div className="flex items-center gap-4">
+          <span
+            aria-hidden
+            className="text-xs font-medium tabular-nums text-muted-foreground max-sm:hidden"
+          >
+            {hourLabel(WORKING_HOURS_LIMITS.min)}
+          </span>
+          <HourRangeSlider
+            aria-labelledby={titleId}
+            aria-describedby={descriptionId}
+            min={WORKING_HOURS_LIMITS.min}
+            max={WORKING_HOURS_LIMITS.max}
+            value={[shown.opening, shown.closing]}
+            // Sin los ajustes cargados no hay contra qué comparar ni qué
+            // adelantar: se espera a que lleguen.
+            disabled={!ajustes}
+            onValueChange={([opening, closing]) => setDraft({ opening, closing })}
+            onValueCommitted={(value) => void save(value)}
+            className="flex-1 py-3"
+          />
+          <span
+            aria-hidden
+            className="text-xs font-medium tabular-nums text-muted-foreground max-sm:hidden"
+          >
+            {hourLabel(WORKING_HOURS_LIMITS.max)}
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-1 rounded-lg bg-muted px-4 py-3">
+          <p className="text-sm font-medium tabular-nums text-foreground">
+            De {formatWorkingHours(shown)}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            La última hora es completa: se puede agendar hasta las{" "}
+            <span className="tabular-nums">{lastStart}</span>. Las citas que
+            queden fuera del horario se siguen viendo en la fila «Fuera».
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+/** Autocompletado de citas (solo médico): necesita conexión. */
 function AppointmentsCard() {
-  const { ajustes, isLoading, error, updateAjustes, isUpdating } = useAjustes()
+  const { ajustes, isLoading, updateAjustes, isUpdating } = useAjustes()
   const titleId = React.useId()
   const descriptionId = React.useId()
 
@@ -168,13 +281,7 @@ function AppointmentsCard() {
         )
       }
     } catch (err) {
-      toast.error(
-        isNetworkError(err)
-          ? "Sin conexión: este ajuste solo se puede cambiar con internet."
-          : err instanceof Error
-            ? err.message
-            : "No se pudo guardar el ajuste.",
-      )
+      toast.error(saveErrorMessage(err))
     }
   }
 
@@ -182,17 +289,9 @@ function AppointmentsCard() {
     <Card className={cn("border-border/70", MOBILE_CARD)}>
       <CardHeader>
         <CardTitle className="text-base">Citas</CardTitle>
-        <CardDescription>Se aplica a tu agenda en todos tus dispositivos.</CardDescription>
+        <CardDescription>Se aplica a tus citas, en todos tus dispositivos.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {error && (
-          <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            {error instanceof Error
-              ? error.message
-              : "No se pudieron cargar los ajustes."}
-          </p>
-        )}
-
         <Field orientation="horizontal">
           <FieldContent>
             <FieldTitle id={titleId}>

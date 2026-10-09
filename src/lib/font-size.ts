@@ -3,9 +3,10 @@ import { usePreferencesStore } from "@/store/preferences.store"
 
 /**
  * Tamaño de letra de la app (pantalla Ajustes), en porcentaje del tamaño del
- * navegador. Son enteros para que el slider no arrastre errores de punto
- * flotante. En teléfono no baja de 100 %: iOS hace zoom al enfocar un campo de
- * menos de 16px (ver el bloque `html` de `index.css`).
+ * navegador; el backend valida el mismo rango (`TAMANO_LETRA`). Son enteros
+ * para que el slider no arrastre errores de punto flotante. En teléfono no
+ * baja de 100 %: iOS hace zoom al enfocar un campo de menos de 16px (ver el
+ * bloque `html` de `index.css`).
  */
 export const FONT_SIZE = {
   min: 90,
@@ -20,8 +21,8 @@ const CSS_VARIABLE = "--app-font-size"
 
 /**
  * Lleva el valor al rango y lo redondea al paso. Lo guardado en
- * `localStorage` puede venir corrupto: cualquier cosa que no sea un número
- * vale el tamaño por defecto.
+ * `localStorage` (o lo que llega del servidor) puede venir corrupto:
+ * cualquier cosa que no sea un número vale el tamaño por defecto.
  */
 export function normalizeFontSize(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {

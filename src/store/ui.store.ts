@@ -14,6 +14,8 @@ export type AppointmentDraft = {
 }
 
 function emptyAppointmentDraft(): AppointmentDraft {
+    // Si cae fuera del horario del usuario (Ajustes), el diálogo la cambia por
+    // su hora de apertura.
     const time = "10:00"
     return {
         patientId: "",

@@ -30,14 +30,13 @@ import { ConfirmDialog } from "@/components/custom/confirm-dialog"
 import { NewAppointmentDialog } from "@/components/custom/new-appointment-dialog"
 import { SyncButton } from "@/components/custom/sync-button"
 import { useAgenda, type AgendaDay } from "@/hooks/useAgenda"
+import { useWorkingHours } from "@/hooks/useAjustes"
 import { useIsMobile } from "@/hooks/useMediaQuery"
 import { useNewAppointmentDialog } from "@/hooks/useNewAppointmentDialog"
 import {
-  AGENDA_HOURS,
   APPOINTMENT_STATUSES,
-  CLOSING_HOUR,
-  OPENING_HOUR,
   STATUS_META,
+  agendaHours,
   closedDaysLabel,
   dayOfMonth,
   defaultEndTime,
@@ -45,6 +44,7 @@ import {
   formatLongDate,
   formatTimeRange,
   formatWeekRange,
+  formatWorkingHours,
   hourLabel,
   layoutDay,
   nextOpenDay,
@@ -55,7 +55,12 @@ import {
 } from "@/lib/clinic-data"
 import { cn } from "@/lib/utils"
 import { useUiStore } from "@/store/ui.store"
-import type { Appointment, AppointmentStatus, Usuario } from "@/types/clinic"
+import type {
+  Appointment,
+  AppointmentStatus,
+  Usuario,
+  WorkingHours,
+} from "@/types/clinic"
 
 const fieldControl =
   "flex h-9 w-full cursor-pointer rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 max-sm:text-base"
@@ -121,6 +126,8 @@ export function AgendaView() {
   // En teléfono se ve un solo día (`?day=`) y las flechas avanzan de día en
   // día; al cruzar a otra semana también cambian `?year=&week=`.
   const isMobile = useIsMobile()
+  // Las filas del horario son las del usuario con sesión (Ajustes).
+  const hours = useWorkingHours()
 
   const goToPrevious =
     isMobile && selectedDay
@@ -321,6 +328,7 @@ export function AgendaView() {
           {isMobile && selectedDay ? (
             <DaySchedule
               day={selectedDay}
+              hours={hours}
               isDeleting={isDeleting}
               onEdit={newAppointment.editAppointment}
               onDelete={deleteAppointment}
@@ -329,6 +337,7 @@ export function AgendaView() {
           ) : (
             <WeekSchedule
               days={weekDays}
+              hours={hours}
               isDeleting={isDeleting}
               onEdit={newAppointment.editAppointment}
               onDelete={deleteAppointment}
@@ -387,7 +396,8 @@ const CARD_ACTION =
 
 /** Etiqueta de la fila de las citas que caen fuera del horario de atención. */
 const OUT_OF_HOURS_LABEL = "Fuera"
-const OUT_OF_HOURS_TITLE = `Citas fuera del horario de atención (${hourLabel(OPENING_HOUR)} a ${hourLabel(CLOSING_HOUR)} h)`
+const outOfHoursTitle = (hours: WorkingHours) =>
+  `Citas fuera del horario de atención (${formatWorkingHours(hours)})`
 
 /**
  * Horario semanal en CSS Grid: una fila por hora de atención y una columna por
@@ -401,18 +411,22 @@ const OUT_OF_HOURS_TITLE = `Citas fuera del horario de atención (${hourLabel(OP
  */
 function WeekSchedule({
   days,
+  hours,
   onSchedule,
   ...actions
 }: AppointmentActions & {
   days: AgendaDay[]
+  hours: WorkingHours
   /** Agenda una cita nueva en una hora libre de la cuadrícula. */
   onSchedule: (date: string, hour: number) => void
 }) {
-  const columns = days.map((day) => ({ day, ...layoutDay(day.items) }))
+  const columns = days.map((day) => ({ day, ...layoutDay(day.items, hours) }))
   const hasOutOfHours = columns.some((column) => column.outOfHours.length > 0)
+  const rows = agendaHours(hours)
+  const outOfHoursLabel = outOfHoursTitle(hours)
   // Filas bajo el encabezado de los días: una por hora y, si hace falta, la de
   // las citas fuera de horario.
-  const bodyRows = AGENDA_HOURS.length + (hasOutOfHours ? 1 : 0)
+  const bodyRows = rows.length + (hasOutOfHours ? 1 : 0)
   // Cada día es tan ancho como sus carriles: si hay citas encimadas, cada una
   // conserva el ancho de una columna normal en vez de quedar ilegible.
   const dayWidths = columns.map(({ lanes }) => `minmax(0, ${lanes}fr)`).join(" ")
@@ -420,9 +434,9 @@ function WeekSchedule({
   return (
     <div className="relative w-full overflow-x-auto rounded-[inherit]">
       <p id="agenda-semana-descripcion" className="sr-only">
-        Las filas son las horas de atención (de {hourLabel(OPENING_HOUR)} a{" "}
-        {hourLabel(CLOSING_HOUR)} h) y las columnas los días que abre el
-        consultorio. Cada cita abarca las horas que dura.
+        Las filas son las horas de atención (de {formatWorkingHours(hours)}) y
+        las columnas los días que abre el consultorio. Cada cita abarca las
+        horas que dura.
       </p>
 
       <div
@@ -437,7 +451,7 @@ function WeekSchedule({
       >
         <StickyCell gridRow={1} className="z-20 border-b" />
 
-        {AGENDA_HOURS.map((hour, row) => (
+        {rows.map((hour, row) => (
           <StickyCell
             key={hour}
             gridRow={row + 2}
@@ -449,7 +463,7 @@ function WeekSchedule({
 
         {/* Solo aparece si hay citas que no caben en ninguna hora del horario. */}
         {hasOutOfHours && (
-          <StickyCell gridRow={bodyRows + 1} title={OUT_OF_HOURS_TITLE}>
+          <StickyCell gridRow={bodyRows + 1} title={outOfHoursLabel}>
             {OUT_OF_HOURS_LABEL}
           </StickyCell>
         )}
@@ -461,6 +475,7 @@ function WeekSchedule({
             gridColumn={index + 2}
             bodyRows={bodyRows}
             showOutOfHours={hasOutOfHours}
+            outOfHoursLabel={outOfHoursLabel}
             onSchedule={(hour) => onSchedule(column.day.date, hour)}
             {...actions}
           />
@@ -512,6 +527,7 @@ function StickyCell({
  */
 function DayColumn({
   day,
+  slots,
   blocks,
   lanes,
   busy,
@@ -519,14 +535,16 @@ function DayColumn({
   gridColumn,
   bodyRows,
   showOutOfHours,
+  outOfHoursLabel,
   onSchedule,
   ...actions
 }: AppointmentActions &
-  Pick<DayLayout, "blocks" | "lanes" | "busy" | "outOfHours"> & {
+  Pick<DayLayout, "slots" | "blocks" | "lanes" | "busy" | "outOfHours"> & {
     day: AgendaDay
     gridColumn: number
     bodyRows: number
     showOutOfHours: boolean
+    outOfHoursLabel: string
     onSchedule: (hour: number) => void
   }) {
   const headingId = React.useId()
@@ -572,7 +590,7 @@ function DayColumn({
         </span>
       </div>
 
-      {AGENDA_HOURS.map((hour, row) => (
+      {slots.map(({ hour }, row) => (
         <div
           key={hour}
           className={cn(
@@ -620,7 +638,7 @@ function DayColumn({
       {showOutOfHours && (
         <div
           role={outOfHours.length > 0 ? "group" : undefined}
-          aria-label={outOfHours.length > 0 ? OUT_OF_HOURS_TITLE : undefined}
+          aria-label={outOfHours.length > 0 ? outOfHoursLabel : undefined}
           className="col-span-full flex flex-col gap-1.5 p-1.5"
           style={{ gridRow: bodyRows + 1 }}
         >
@@ -641,9 +659,10 @@ function DayColumn({
  */
 function DaySchedule({
   day,
+  hours,
   ...actions
-}: AppointmentActions & { day: AgendaDay }) {
-  const { slots, busy, outOfHours } = layoutDay(day.items)
+}: AppointmentActions & { day: AgendaDay; hours: WorkingHours }) {
+  const { slots, busy, outOfHours } = layoutDay(day.items, hours)
 
   return (
     <div
@@ -665,7 +684,7 @@ function DaySchedule({
       {outOfHours.length > 0 && (
         <HourBlock
           label={OUT_OF_HOURS_LABEL}
-          title={OUT_OF_HOURS_TITLE}
+          title={outOfHoursTitle(hours)}
           items={outOfHours}
           {...actions}
         />

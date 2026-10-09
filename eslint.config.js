@@ -20,10 +20,19 @@ export default defineConfig([
     },
   },
   {
-    // Componentes generados por shadcn: exportan sus variantes `cva` junto al componente.
-    files: ['src/components/ui/**/*.{ts,tsx}'],
+    // Componentes generados por shadcn: exportan sus variantes `cva` (o, los de
+    // reui, sus utilidades) junto al componente.
+    files: ['src/components/ui/**/*.{ts,tsx}', 'src/components/reui/**/*.{ts,tsx}'],
     rules: {
       'react-refresh/only-export-components': 'off',
+    },
+  },
+  {
+    // El time picker de reui normaliza espacios no separables con un regex que
+    // los escribe literales.
+    files: ['src/components/reui/**/*.{ts,tsx}'],
+    rules: {
+      'no-irregular-whitespace': ['error', { skipRegExps: true }],
     },
   },
 ])

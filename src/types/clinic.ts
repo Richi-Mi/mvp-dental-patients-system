@@ -118,10 +118,29 @@ export type DashboardMetrics = {
   citasPorEstatus: Record<AppointmentStatus, number>
 }
 
-/** Ajustes del médico guardados en el servidor (`/ajustes`). */
+/**
+ * Horario de atención: primera y última hora (0–23) de la agenda. La última
+ * es un bloque completo (con cierre a las 20, una cita puede empezar a las
+ * 20:55).
+ */
+export type WorkingHours = {
+  opening: number
+  closing: number
+}
+
+/**
+ * Ajustes del usuario (médico o asistente) guardados en el servidor
+ * (`/ajustes`): los mismos en todos sus dispositivos.
+ */
 export type Ajustes = {
-  /** Las citas confirmadas pasan solas a completadas un día después. */
+  /**
+   * Las citas confirmadas pasan solas a completadas un día después. Solo lo
+   * cambia un médico: las citas son suyas.
+   */
   autocompletarCitas: boolean
+  workingHours: WorkingHours
+  /** Porcentaje del tamaño de letra del navegador (ver `lib/font-size.ts`). */
+  fontSize: number
 }
 
 export type Usuario = {

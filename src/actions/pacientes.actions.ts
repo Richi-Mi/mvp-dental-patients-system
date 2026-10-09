@@ -30,7 +30,7 @@ export async function getPatient(id: number): Promise<Patient> {
   return toPatient(data)
 }
 
-/** `POST /pacientes` — `birthDate` (`yyyy-mm-dd`) es obligatoria. */
+/** `POST /pacientes` — `birthDate` (`yyyy-mm-dd`) es opcional: `""` = sin fecha. */
 export async function createPatient(
   input: PatientInput & { birthDate: string; medicoEmail?: string | null },
 ): Promise<Patient> {
