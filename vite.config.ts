@@ -21,7 +21,7 @@ export default defineConfig({
       // Los íconos ya entran por `globPatterns`; así no se guardan dos veces.
       includeManifestIcons: false,
       manifest: {
-        name: "Odontologia Familiar GC",
+        name: "Odontología Familiar GC",
         short_name: "Odontologia GC",
         lang: "es-MX",
         start_url: "/",

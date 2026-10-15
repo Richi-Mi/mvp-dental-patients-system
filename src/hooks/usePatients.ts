@@ -14,6 +14,7 @@ import {
   newTempPatientId,
   patientFromCreate,
 } from "@/lib/offline-queue"
+import { filterPatients } from "@/lib/patient-search"
 import { queryKeys } from "@/lib/query-keys"
 import { saveOrQueue } from "@/lib/save-or-queue"
 import { useAuthStore } from "@/store/auth.store"
@@ -62,16 +63,10 @@ export function usePatients() {
     [listQuery.data, ownPending, correoMedico],
   )
 
-  const filtered = React.useMemo(() => {
-    const term = search.trim().toLowerCase()
-    if (!term) return patients
-    return patients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.email.toLowerCase().includes(term) ||
-        p.phone.toLowerCase().includes(term),
-    )
-  }, [patients, search])
+  const filtered = React.useMemo(
+    () => filterPatients(patients, search),
+    [patients, search],
+  )
 
   const invalidate = React.useCallback(
     (id?: number) => {

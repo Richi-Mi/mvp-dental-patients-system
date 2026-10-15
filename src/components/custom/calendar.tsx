@@ -40,6 +40,11 @@ export type CalendarProps = {
   /** Días no seleccionables (por defecto, los días sin atención). */
   isDateDisabled?: (date: string) => boolean
   /**
+   * Días que el médico marcó como inactivos: tampoco se pueden elegir y se
+   * pintan de rojo, como en la agenda.
+   */
+  isDateInactive?: (date: string) => boolean
+  /**
    * `arrows` (por defecto): solo flechas de mes, como en la agenda.
    * `dropdown`: añade selectores de mes y año para saltar lejos (p. ej.
    * fechas de nacimiento), limitados a `fromYear`–`toYear`.
@@ -61,6 +66,7 @@ export function Calendar({
   value,
   onSelect,
   isDateDisabled = isClosedDay,
+  isDateInactive,
   captionLayout = "arrows",
   fromYear = 1900,
   toYear = new Date().getFullYear(),
@@ -171,7 +177,8 @@ export function Calendar({
       <div className="grid grid-cols-7 gap-px">
         {dates.map((date) => {
           const outside = !date.startsWith(currentMonth)
-          const disabled = isDateDisabled(date)
+          const inactive = isDateInactive?.(date) ?? false
+          const disabled = inactive || isDateDisabled(date)
           const selected = date === value
           const isToday = date === today
 
@@ -180,7 +187,11 @@ export function Calendar({
               key={date}
               type="button"
               disabled={disabled}
-              aria-label={formatLongDate(date)}
+              aria-label={
+                inactive
+                  ? `${formatLongDate(date)}, día inactivo`
+                  : formatLongDate(date)
+              }
               aria-current={isToday ? "date" : undefined}
               aria-pressed={selected}
               onClick={() => onSelect?.(date)}
@@ -192,7 +203,14 @@ export function Calendar({
                 selected &&
                   "bg-primary font-semibold text-primary-foreground hover:bg-primary/90",
                 disabled &&
+                  !inactive &&
                   "cursor-not-allowed text-muted-foreground/40 line-through hover:bg-transparent",
+                // Rojo como en la agenda; si es el día de la cita que se
+                // edita, sigue viéndose seleccionado.
+                inactive &&
+                  (selected
+                    ? "cursor-not-allowed bg-destructive text-white line-through hover:bg-destructive"
+                    : "cursor-not-allowed bg-destructive/10 text-destructive line-through hover:bg-destructive/10"),
                 !disabled && "cursor-pointer",
               )}
             >
@@ -210,6 +228,8 @@ export type DatePickerProps = {
   value: string
   onChange: (date: string) => void
   isDateDisabled?: (date: string) => boolean
+  /** Ver `CalendarProps`. */
+  isDateInactive?: (date: string) => boolean
   placeholder?: string
   /** `short` ("8 Sep 2026") para espacios estrechos como una celda de tabla. */
   format?: "long" | "short"
@@ -232,6 +252,7 @@ export function DatePicker({
   value,
   onChange,
   isDateDisabled = isClosedDay,
+  isDateInactive,
   placeholder = "Selecciona una fecha",
   format = "long",
   onKeyDown,
@@ -283,6 +304,7 @@ export function DatePicker({
             <Calendar
               value={value}
               isDateDisabled={isDateDisabled}
+              isDateInactive={isDateInactive}
               captionLayout={captionLayout}
               fromYear={fromYear}
               toYear={toYear}

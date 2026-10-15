@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useLocation, useNavigate, useSearchParams } from "react-router"
-import { Loader2, Plus, UserPlus } from "lucide-react"
+import { Loader2, Plus } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -16,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { DatePicker } from "@/components/custom/calendar"
+import { PatientPickerDialog } from "@/components/custom/patient-picker-dialog"
 import { ResponsiveDialogContent } from "@/components/custom/responsive-dialog"
 import { MINUTE_STEP, TimePicker } from "@/components/custom/time-picker"
 import { useAgenda } from "@/hooks/useAgenda"
@@ -26,6 +27,7 @@ import {
     STATUS_META,
     appointmentTimeBounds,
     formatDuration,
+    inactiveDayMessage,
     isClosedDay,
     minutesToTime,
     shiftEndTime,
@@ -67,11 +69,12 @@ export function NewAppointmentDialog() {
     const navigate = useNavigate()
     const location = useLocation()
 
-    const { patients } = usePatients()
+    const { patients, isLoading: patientsLoading } = usePatients()
     const {
         appointments,
         isLoading,
         findTimeConflict,
+        isDayInactive,
         createAppointment,
         isCreating,
         createError,
@@ -156,6 +159,13 @@ export function NewAppointmentDialog() {
     }
 
     const closedDay = isClosedDay(values.date)
+    // Un día inactivo bloquea agendar ahí o mover la cita hacia él; la cita
+    // que ya estaba ese día se puede seguir editando, igual que en el backend.
+    const inactiveDay =
+        !closedDay &&
+        isDayInactive(values.date) &&
+        (!edit || values.date !== editing?.date)
+    const dateError = closedDay || inactiveDay
     // Las dos son `HH:mm` de 24 h, así que se comparan como texto.
     const invalidRange = values.endTime <= values.time
     const startMinutes = timeToMinutes(values.time) ?? hours.opening * 60
@@ -171,7 +181,7 @@ export function NewAppointmentDialog() {
     const canSubmit =
         Boolean(values.patientId) &&
         Boolean(values.date) &&
-        !closedDay &&
+        !dateError &&
         !invalidRange &&
         !conflict &&
         (!isAsistente || Boolean(medicoEmail))
@@ -234,7 +244,9 @@ export function NewAppointmentDialog() {
             </Button>
 
             <Dialog open={open} onOpenChange={setOpen}>
-                <ResponsiveDialogContent className="sm:max-w-md">
+                {/* Se oculta mientras está abierta la ventana de "Seleccionar
+                    paciente" (un diálogo anidado), y reaparece al cerrarla. */}
+                <ResponsiveDialogContent className="sm:max-w-md data-nested-dialog-open:opacity-0">
                     {editingId && !edit ? (
                         <MissingAppointment isLoading={isLoading} />
                     ) : (
@@ -281,40 +293,16 @@ export function NewAppointmentDialog() {
 
                                 <Field>
                                     <FieldLabel htmlFor="na-patient">Paciente</FieldLabel>
-                                    <div className="flex items-center gap-2 max-sm:flex-col max-sm:items-stretch">
-                                        <select
-                                            id="na-patient"
-                                            className={fieldControl}
-                                            value={values.patientId}
-                                            onChange={(e) =>
-                                                setValues({ patientId: e.target.value })
-                                            }
-                                            required
-                                        >
-                                            <option value="" disabled>
-                                                Selecciona un paciente
-                                            </option>
-                                            {patients.map((p) => (
-                                                <option key={p.id} value={p.id}>
-                                                    {p.name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        {/* El rodeo a "Nuevo paciente" vuelve al alta
-                                            (`?cita=nueva`), así que no cabe al editar. */}
-                                        {!edit && (
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                className="shrink-0"
-                                                onClick={goToNewPatient}
-                                            >
-                                                <UserPlus data-icon="inline-start" />
-                                                Nuevo paciente
-                                            </Button>
-                                        )}
-                                    </div>
+                                    {/* El rodeo a "Nuevo paciente" vuelve al alta
+                                        (`?cita=nueva`), así que no cabe al editar. */}
+                                    <PatientPickerDialog
+                                        id="na-patient"
+                                        patients={patients}
+                                        isLoading={patientsLoading}
+                                        selectedId={values.patientId}
+                                        onSelect={(p) => setValues({ patientId: String(p.id) })}
+                                        onNewPatient={edit ? undefined : goToNewPatient}
+                                    />
                                 </Field>
 
                                 <Field>
@@ -323,9 +311,10 @@ export function NewAppointmentDialog() {
                                         id="na-date"
                                         value={values.date}
                                         onChange={(date) => setValues({ date })}
-                                        aria-invalid={closedDay}
+                                        isDateInactive={isDayInactive}
+                                        aria-invalid={dateError}
                                         aria-describedby={
-                                            closedDay ? "na-date-error" : undefined
+                                            dateError ? "na-date-error" : undefined
                                         }
                                     />
                                 </Field>
@@ -402,7 +391,17 @@ export function NewAppointmentDialog() {
                                     </p>
                                 )}
 
-                                {!closedDay && conflict && (
+                                {inactiveDay && (
+                                    <p
+                                        id="na-date-error"
+                                        role="alert"
+                                        className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700"
+                                    >
+                                        {inactiveDayMessage(values.date)}
+                                    </p>
+                                )}
+
+                                {!dateError && conflict && (
                                     <p
                                         role="alert"
                                         className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700"

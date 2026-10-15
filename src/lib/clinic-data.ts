@@ -306,6 +306,29 @@ export function onlyOpenDays(dates: string[]): string[] {
   return dates.filter((date) => !isClosedDay(date))
 }
 
+/*
+ * Días inactivos: fechas sueltas que el médico marca desde la agenda
+ * (vacaciones, un congreso…), guardadas en el servidor (`useInactiveDays`).
+ * A diferencia de `CLOSED_WEEKDAYS`, su columna sí se muestra (en rojo) con
+ * las citas que ya tenía; solo se bloquea agendar o mover citas hacia ese día.
+ */
+
+/** `dates` con `date` agregado (`inactive`) o quitado, ordenado y sin repetir. */
+export function withInactiveDay(
+  dates: readonly string[],
+  date: string,
+  inactive: boolean,
+): string[] {
+  const rest = dates.filter((d) => d !== date)
+  // Las cadenas `yyyy-mm-dd` se ordenan igual que las fechas.
+  return inactive ? [...rest, date].sort() : rest
+}
+
+/** Aviso al intentar agendar (o mover una cita) en un día inactivo. */
+export function inactiveDayMessage(date: string): string {
+  return `El ${formatLongDate(date)} está marcado como día inactivo. Elige otro día.`
+}
+
 // ---- Horario de atención ----
 
 /**

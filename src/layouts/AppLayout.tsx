@@ -111,7 +111,7 @@ export function AppLayout() {
           className="size-9 shrink-0 object-contain"
         />
         <p className="truncate text-base font-semibold text-foreground">
-          Odontologia Familiar GC
+          Odontología Familiar GC
         </p>
       </header>
 
@@ -143,12 +143,12 @@ function SidebarContent({
       <div className="flex flex-col items-center gap-2 text-center">
         <img
           src="/icon_local.png"
-          alt="Odontologia Familiar"
+          alt="Odontología Familiar"
           className="size-24 object-contain max-lg:size-16"
         />
         <div className="leading-tight">
           <p className="text-base font-semibold text-foreground">
-            Odontologia Familiar GC
+            Odontología Familiar GC
           </p>
           <p className="text-sm text-muted-foreground">Consultorio Dental</p>
         </div>

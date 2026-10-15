@@ -5,7 +5,7 @@ import {
 } from "@/lib/clinic-data"
 import type { Appointment, Patient } from "@/types/clinic"
 
-export const CLINIC_NAME = "Odontologia Familiar GC"
+export const CLINIC_NAME = "Odontología Familiar GC"
 
 /** Lada de México, que se antepone a los números capturados a 10 dígitos. */
 const MX_COUNTRY_CODE = "52"

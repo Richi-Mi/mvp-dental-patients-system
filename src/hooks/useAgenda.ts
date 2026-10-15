@@ -12,6 +12,7 @@ import { isNetworkError } from "@/api/client"
 import type { CitasQuery } from "@/api/types"
 import {
     getISOWeek,
+    inactiveDayMessage,
     isoWeekDates,
     onlyOpenDays,
     parseISO,
@@ -25,6 +26,7 @@ import { saveOrQueue } from "@/lib/save-or-queue"
 import { useAuthStore } from "@/store/auth.store"
 import type { Appointment, AppointmentInput } from "@/types/clinic"
 import { useActiveMedico } from "./useMedicos"
+import { useInactiveDays } from "./useInactiveDays"
 import { useOwnPendingOperations } from "./useOwnPendingOperations"
 
 /** Parámetros de la URL que controla la agenda. */
@@ -69,6 +71,8 @@ export type AgendaDay = {
     /** `yyyy-mm-dd` */
     date: string
     isToday: boolean
+    /** Marcado como inactivo: no se agenda ahí (ver `useInactiveDays`). */
+    isInactive: boolean
     items: Appointment[]
 }
 
@@ -180,6 +184,13 @@ export function useAgenda() {
     const owner = useAuthStore((s) => s.usuario?.correo)
     const ownPending = useOwnPendingOperations()
 
+    const {
+        inactiveDays,
+        isDayInactive,
+        setDayInactive,
+        isUpdating: isUpdatingDay,
+    } = useInactiveDays(medicoEmail, isReady)
+
     const params: CitasQuery = React.useMemo(() => {
         const term = search.trim()
         return { year, week, ...(term ? { query: term } : {}) }
@@ -211,9 +222,10 @@ export function useAgenda() {
         return [...buckets.entries()].map(([date, items]) => ({
             date,
             isToday: date === today,
+            isInactive: inactiveDays.has(date),
             items,
         }))
-    }, [appointments, weekDates])
+    }, [appointments, weekDates, inactiveDays])
 
     /**
      * Día que se muestra en la vista de teléfono: el de `?day=` si cae en la
@@ -288,8 +300,12 @@ export function useAgenda() {
                 // agenda, para no encolar una cita que de todos modos no se
                 // va a poder crear. `validate` corre justo antes de encolar
                 // (offline de entrada, o porque el intento real acaba de
-                // fallar por red), así que cubre ambos casos.
+                // fallar por red), así que cubre ambos casos. Lo mismo con un
+                // día inactivo (400 en el backend).
                 validate: () => {
+                    if (isDayInactive(cita.date)) {
+                        throw new Error(inactiveDayMessage(cita.date))
+                    }
                     const conflict = findConflict(appointments, cita.date, cita.time)
                     if (conflict) {
                         throw new Error(
@@ -338,10 +354,15 @@ export function useAgenda() {
                     ...(medicoEmail ? { medicoCorreo: medicoEmail } : {}),
                 },
                 // Igual que al crear: solo aplica si de verdad mueve la cita
-                // de horario (ver el comentario en `createMutation`).
+                // de horario (ver el comentario en `createMutation`). El día
+                // inactivo, solo si la mueve a otro día: la que ya estaba ahí
+                // se puede seguir editando, como en el backend.
                 validate: () => {
                     if (!current || (!input.date && !input.time)) return
                     const date = input.date ?? current.date
+                    if (date !== current.date && isDayInactive(date)) {
+                        throw new Error(inactiveDayMessage(date))
+                    }
                     const time = input.time ?? current.time
                     const conflict = findConflict(appointments, date, time, id)
                     if (conflict) {
@@ -398,6 +419,11 @@ export function useAgenda() {
         selectDay,
         clearFilters,
         findTimeConflict,
+
+        /** Días inactivos de esta agenda (la propia o la del médico elegido). */
+        isDayInactive,
+        setDayInactive,
+        isUpdatingDay,
 
         /** Solo un asistente elige médico; un médico ve siempre su agenda. */
         isAsistente,

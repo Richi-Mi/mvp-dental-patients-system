@@ -92,7 +92,7 @@ Formas de salida más comunes (ya sin `password` y con relaciones aplanadas). Lo
 }
 ```
 
-> `cp`, `direccion`, `correo` y `telefono` se guardan en una tabla aparte (`paciente_contact`, relación 1 -> 1), pero el API los sigue exponiendo **planos** en el paciente, también cuando el paciente viene dentro de una `Cita`. Valen `null` si no se capturaron: los strings vacíos (o solo espacios) se guardan como `null`, y si los cuatro quedan en `null` no existe registro de contacto.
+> `cp`, `direccion`, `correo` y `telefono` se guardan en tablas aparte (relaciones 1 -> 1): `paciente_contacto` (teléfono), `paciente_correo` (correo) y `paciente_direccion` (`cp` y `direccion`). El API los sigue exponiendo **planos** en el paciente, también cuando el paciente viene dentro de una `Cita`. Valen `null` si no se capturaron: los strings vacíos (o solo espacios) se guardan como `null`, y cada tabla solo tiene registro si alguno de sus campos tiene valor.
 
 **Tratamiento**
 ```ts
@@ -385,7 +385,7 @@ Crea un paciente nuevo.
 | `notas` | `string` | No | |
 | `correo_medico` | `string` | No | Correo de un `Usuario` existente; si se envía y no existe, `404`. Si se omite, el paciente queda sin médico asignado. |
 
-> **Datos de contacto:** omitir un campo, mandarlo en `null` o como `""` (o solo espacios) es equivalente: se guarda como `null`, y los strings se guardan sin espacios al inicio ni al final. Si los cuatro quedan en `null`, el paciente se crea **sin** registro de contacto. Un valor que no sea `string` ni `null` responde `422`.
+> **Datos de contacto:** omitir un campo, mandarlo en `null` o como `""` (o solo espacios) es equivalente: se guarda como `null`, y los strings se guardan sin espacios al inicio ni al final. Solo se crean los registros de contacto (teléfono, correo, dirección) que tengan algún valor; si los cuatro quedan en `null`, el paciente se crea sin ninguno. Un valor que no sea `string` ni `null` responde `422`.
 
 - **Respuesta `201`:** objeto `Paciente` creado.
 - **Errores:** `404` si `correo_medico` no corresponde a ningún usuario; `422` si faltan campos requeridos.
@@ -402,7 +402,7 @@ Actualiza los datos de un paciente. Todos los campos son opcionales (actualizaci
 | Campo | Tipo | Requerido | Notas |
 |---|---|---|---|
 | `notas`, `nombre`, `sexo` | `string` | No | |
-| `cp`, `direccion`, `correo`, `telefono` | `string \| null` | No | Omitido: no cambia. `null` o `""`: se borra ese dato. Si tras aplicar los cambios los cuatro quedan en `null`, se elimina el registro de contacto; si el paciente no tenía y se manda algún valor, se crea. |
+| `cp`, `direccion`, `correo`, `telefono` | `string \| null` | No | Omitido: no cambia. `null` o `""`: se borra ese dato. Cada registro de contacto (teléfono, correo, dirección) se elimina si sus campos quedan en `null`, y se crea si no existía y se manda algún valor. |
 | `fecha_nacimiento` | `string` (`YYYY-MM-DD`) \| `null` | No | Omitida: no cambia. `null`: se borra. |
 | `correo_medico` | `string` | No | Reasigna el médico del paciente. |
 | `tratamientos` | `Tratamiento[]` (ver abajo) | No | **Reemplaza por completo** la lista de tratamientos guardados (ver detalle). |
@@ -556,7 +556,7 @@ Crea una nueva cita para el médico autenticado.
 ```
 
 - **Respuesta `201`:** objeto `Cita` creado (`id` generado por el backend).
-- **Errores:** `422` si `horaFin` no tiene el formato `HH:MM`; `400` si no es posterior a la hora de inicio; `404` si el paciente no existe o está inactivo; `409` si el médico ya tiene una cita registrada exactamente en ese horario.
+- **Errores:** `422` si `horaFin` no tiene el formato `HH:MM`; `400` si no es posterior a la hora de inicio, o si el día está marcado como inactivo (ver [Días inactivos](#días-inactivos)); `404` si el paciente no existe o está inactivo; `409` si el médico ya tiene una cita registrada exactamente en ese horario.
 
 ### `GET /citas/medico/:correo`
 
@@ -621,7 +621,7 @@ Actualiza una cita existente del médico autenticado. Todos los campos son opcio
 | `estatus` | `string` | No |
 
 - **Respuesta `200`:** objeto `Cita` actualizado.
-- **Errores:** `422` si `horaFin` no tiene el formato `HH:MM`; `400` si no queda después de la hora de inicio (la nueva, si también cambia `fecha_cita`); `404` si la cita no existe o no pertenece al médico autenticado; `404` si el nuevo `id_paciente` no existe/está inactivo.
+- **Errores:** `422` si `horaFin` no tiene el formato `HH:MM`; `400` si no queda después de la hora de inicio (la nueva, si también cambia `fecha_cita`), o si `fecha_cita` mueve la cita a **otro** día que está inactivo (una cita que ya estaba en un día inactivo se puede seguir editando ahí); `404` si la cita no existe o no pertenece al médico autenticado; `404` si el nuevo `id_paciente` no existe/está inactivo.
 
 ### `DELETE /citas/:id`
 
@@ -635,6 +635,23 @@ Elimina una cita **físicamente** de la base de datos (no es baja lógica).
 { "message": "Cita eliminada" }
 ```
 - **Errores:** `404` si la cita no existe o no pertenece al médico autenticado.
+
+### Días inactivos
+
+Fechas sueltas en que un médico no atiende (vacaciones, un congreso…), que él o un asistente marcan desde la agenda. `fecha` es el día `YYYY-MM-DD` en el reloj del **consultorio** (`ZONA_HORARIA`). Ese día `POST /citas` responde `400` y un `PUT` que **mueve** una cita hacia él también; las citas que ya estaban ahí se quedan y se pueden seguir editando. Los días que el consultorio cierra cada semana (domingo) no son días inactivos: solo los conoce el frontend.
+
+| Método | Ruta | Respuesta `200` |
+|---|---|---|
+| `GET` | `/citas/dias-inactivos` | `string[]`: las fechas del médico del token, ordenadas. |
+| `PUT` | `/citas/dias-inactivos/:fecha` | `{ "fecha": "2026-10-20", "inactivo": true }`. Idempotente: marcarlo dos veces no es un error. |
+| `DELETE` | `/citas/dias-inactivos/:fecha` | `{ "fecha": "2026-10-20", "inactivo": false }`. Idempotente: si no estaba inactivo, no hace nada. |
+| `GET` | `/citas/medico/:correo/dias-inactivos` | Igual, en la agenda de ese médico (un asistente). |
+| `PUT` | `/citas/medico/:correo/dias-inactivos/:fecha` | Igual. |
+| `DELETE` | `/citas/medico/:correo/dias-inactivos/:fecha` | Igual. |
+
+- **Auth:** sí. **Rol:** cualquiera.
+- **Headers:** `token: <jwt>`.
+- **Errores:** `422` si `fecha` no tiene el formato `YYYY-MM-DD`; `400` si es un día que no existe (`2026-02-30`); `404` en las rutas `/medico/:correo` si el médico no existe o está inactivo.
 
 ---
 

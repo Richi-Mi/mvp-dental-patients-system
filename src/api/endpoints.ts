@@ -39,5 +39,14 @@ export const ENDPOINTS = {
     /** Una cita de otro médico: un asistente la edita (PUT) o la borra (DELETE). */
     byMedicoId: (correo: string, id: string) =>
       `/citas/medico/${encodeURIComponent(correo)}/${encodeURIComponent(id)}`,
+    /** `GET` lista los días inactivos de la agenda propia. */
+    diasInactivos: "/citas/dias-inactivos",
+    /** `PUT` marca el día (`yyyy-mm-dd`) como inactivo; `DELETE` lo vuelve a activar. */
+    diaInactivo: (fecha: string) => `/citas/dias-inactivos/${fecha}`,
+    /** Lo mismo en la agenda de otro médico (un asistente). */
+    diasInactivosByMedico: (correo: string) =>
+      `/citas/medico/${encodeURIComponent(correo)}/dias-inactivos`,
+    diaInactivoByMedico: (correo: string, fecha: string) =>
+      `/citas/medico/${encodeURIComponent(correo)}/dias-inactivos/${fecha}`,
   },
 } as const

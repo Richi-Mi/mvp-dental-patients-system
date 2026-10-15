@@ -41,4 +41,10 @@ export const queryKeys = {
     list: (params: CitasQuery, medicoEmail?: string | null) =>
       ["citas", "list", medicoEmail ?? "propio", params] as const,
   },
+  /** Días inactivos de la agenda propia o del médico que ve un asistente. */
+  inactiveDays: {
+    all: ["dias-inactivos"] as const,
+    list: (medicoEmail?: string | null) =>
+      ["dias-inactivos", medicoEmail ?? "propio"] as const,
+  },
 } as const

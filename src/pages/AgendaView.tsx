@@ -3,6 +3,8 @@
 import * as React from "react"
 import { Link } from "react-router"
 import {
+  CalendarCheck2,
+  CalendarX2,
   ChevronLeft,
   ChevronRight,
   FunnelX,
@@ -13,8 +15,16 @@ import {
   Stethoscope,
   Trash2,
 } from "lucide-react"
+import { toast } from "sonner"
 
+import { isNetworkError } from "@/api/client"
 import { Button } from "@/components/ui/button"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
 import {
   InputGroup,
   InputGroupAddon,
@@ -111,6 +121,8 @@ export function AgendaView() {
     setMedico,
     isLoadingMedicos,
     medicosError,
+    setDayInactive,
+    isUpdatingDay,
   } = useAgenda()
 
   // El input es un borrador: la búsqueda solo se aplica al enviar el formulario
@@ -184,6 +196,31 @@ export function AgendaView() {
     const time = hourLabel(hour)
     setDraft({ date, time, endTime: defaultEndTime(time) })
     newAppointment.setOpen(true)
+  }
+
+  // Menú del encabezado de cada día (clic derecho o pulsación larga). El día
+  // cambia de color en cuanto se elige; si el servidor falla, vuelve atrás.
+  const changeDayStatus = async (date: string, inactive: boolean) => {
+    try {
+      await setDayInactive(date, inactive)
+      toast.success(
+        inactive
+          ? `El ${formatLongDate(date)} quedó marcado como día inactivo.`
+          : `El ${formatLongDate(date)} vuelve a estar activo.`,
+      )
+    } catch (err) {
+      toast.error(
+        isNetworkError(err)
+          ? "Sin conexión: los días inactivos solo se pueden cambiar con internet."
+          : err instanceof Error
+            ? err.message
+            : "No se pudo cambiar el día.",
+      )
+    }
+  }
+  const dayMenu: DayMenuActions = {
+    onSetInactive: changeDayStatus,
+    isSavingDay: isUpdatingDay,
   }
 
   return (
@@ -329,6 +366,7 @@ export function AgendaView() {
             <DaySchedule
               day={selectedDay}
               hours={hours}
+              dayMenu={dayMenu}
               isDeleting={isDeleting}
               onEdit={newAppointment.editAppointment}
               onDelete={deleteAppointment}
@@ -338,6 +376,7 @@ export function AgendaView() {
             <WeekSchedule
               days={weekDays}
               hours={hours}
+              dayMenu={dayMenu}
               isDeleting={isDeleting}
               onEdit={newAppointment.editAppointment}
               onDelete={deleteAppointment}
@@ -394,6 +433,13 @@ type AppointmentActions = {
 const CARD_ACTION =
   "flex items-center gap-1 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-50 max-lg:touch-hitbox max-lg:opacity-100 max-lg:disabled:opacity-50 max-sm:text-sm"
 
+/** Menú del encabezado de un día: marcarlo como inactivo o volver a activarlo. */
+type DayMenuActions = {
+  onSetInactive: (date: string, inactive: boolean) => void
+  /** Se está guardando un cambio de día: el menú se deshabilita mientras tanto. */
+  isSavingDay: boolean
+}
+
 /** Etiqueta de la fila de las citas que caen fuera del horario de atención. */
 const OUT_OF_HOURS_LABEL = "Fuera"
 const outOfHoursTitle = (hours: WorkingHours) =>
@@ -412,11 +458,13 @@ const outOfHoursTitle = (hours: WorkingHours) =>
 function WeekSchedule({
   days,
   hours,
+  dayMenu,
   onSchedule,
   ...actions
 }: AppointmentActions & {
   days: AgendaDay[]
   hours: WorkingHours
+  dayMenu: DayMenuActions
   /** Agenda una cita nueva en una hora libre de la cuadrícula. */
   onSchedule: (date: string, hour: number) => void
 }) {
@@ -476,6 +524,7 @@ function WeekSchedule({
             bodyRows={bodyRows}
             showOutOfHours={hasOutOfHours}
             outOfHoursLabel={outOfHoursLabel}
+            dayMenu={dayMenu}
             onSchedule={(hour) => onSchedule(column.day.date, hour)}
             {...actions}
           />
@@ -536,6 +585,7 @@ function DayColumn({
   bodyRows,
   showOutOfHours,
   outOfHoursLabel,
+  dayMenu,
   onSchedule,
   ...actions
 }: AppointmentActions &
@@ -545,6 +595,7 @@ function DayColumn({
     bodyRows: number
     showOutOfHours: boolean
     outOfHoursLabel: string
+    dayMenu: DayMenuActions
     onSchedule: (hour: number) => void
   }) {
   const headingId = React.useId()
@@ -555,7 +606,7 @@ function DayColumn({
       aria-labelledby={headingId}
       className={cn(
         "grid grid-rows-subgrid border-r border-border/70 last:border-r-0",
-        day.isToday && "bg-primary/5",
+        dayTint(day),
       )}
       style={{
         gridRow: `1 / span ${bodyRows + 1}`,
@@ -563,32 +614,13 @@ function DayColumn({
         gridTemplateColumns: `repeat(${lanes}, minmax(0, 1fr))`,
       }}
     >
-      <div
+      <DayHeader
         id={headingId}
-        aria-current={day.isToday ? "date" : undefined}
-        className={cn(
-          "col-span-full flex flex-col items-center gap-0.5 border-b border-border/70 px-3 py-2.5",
-          day.isToday ? "bg-primary/10" : "bg-muted/40",
-        )}
+        day={day}
+        {...dayMenu}
+        className="col-span-full border-b border-border/70 px-3 py-2.5"
         style={{ gridRow: 1 }}
-      >
-        <span
-          className={cn(
-            "text-xs font-medium uppercase tracking-wide",
-            day.isToday ? "text-primary" : "text-muted-foreground",
-          )}
-        >
-          {shortDayName(day.date)}
-        </span>
-        <span
-          className={cn(
-            "flex size-7 items-center justify-center rounded-full text-sm font-semibold tabular-nums",
-            day.isToday ? "bg-primary text-primary-foreground" : "text-foreground",
-          )}
-        >
-          {dayOfMonth(day.date)}
-        </span>
-      </div>
+      />
 
       {slots.map(({ hour }, row) => (
         <div
@@ -599,10 +631,11 @@ function DayColumn({
           )}
           style={{ gridRow: row + 2 }}
         >
-          {!busy[row] && (
-            // Una hora libre agenda ahí. Se esconde por debajo de `lg`: sin
-            // hover, una zona invisible que abre un diálogo se toca sin
-            // querer, y ahí ya está el botón flotante "Nueva cita".
+          {!busy[row] && !day.isInactive && (
+            // Una hora libre agenda ahí (en un día inactivo no se agenda).
+            // Se esconde por debajo de `lg`: sin hover, una zona invisible
+            // que abre un diálogo se toca sin querer, y ahí ya está el botón
+            // flotante "Nueva cita".
             <button
               type="button"
               onClick={() => onSchedule(hour)}
@@ -651,6 +684,96 @@ function DayColumn({
   )
 }
 
+/** Fondo de todo el día: rojo si está inactivo (aunque sea hoy), azul si es hoy. */
+function dayTint(day: AgendaDay): string | false {
+  if (day.isInactive) return "bg-destructive/5"
+  return day.isToday && "bg-primary/5"
+}
+
+/**
+ * Encabezado de un día (nombre y número). Con clic derecho, o dejándolo
+ * presionado en pantallas táctiles, abre un menú para marcar el día como
+ * inactivo o volver a activarlo. Un día inactivo se pinta de rojo y lo dice
+ * con texto ("Inactivo"), no solo con el color.
+ */
+function DayHeader({
+  day,
+  id,
+  className,
+  style,
+  onSetInactive,
+  isSavingDay,
+}: DayMenuActions & {
+  day: AgendaDay
+  id?: string
+  className?: string
+  style?: React.CSSProperties
+}) {
+  const { isInactive, isToday } = day
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger
+        id={id}
+        aria-current={isToday ? "date" : undefined}
+        title={`Clic derecho para marcar el día como ${isInactive ? "activo" : "inactivo"}`}
+        className={cn(
+          "flex flex-col items-center justify-center gap-0.5",
+          isInactive
+            ? "bg-destructive/10"
+            : isToday
+              ? "bg-primary/10"
+              : "bg-muted/40",
+          className,
+        )}
+        style={style}
+      >
+        <span
+          className={cn(
+            "text-xs font-medium uppercase tracking-wide",
+            isInactive
+              ? "text-destructive"
+              : isToday
+                ? "text-primary"
+                : "text-muted-foreground",
+          )}
+        >
+          {shortDayName(day.date)}
+        </span>
+        <span
+          className={cn(
+            "flex size-7 items-center justify-center rounded-full text-sm font-semibold tabular-nums",
+            isToday
+              ? isInactive
+                ? "bg-destructive text-white"
+                : "bg-primary text-primary-foreground"
+              : isInactive
+                ? "text-destructive"
+                : "text-foreground",
+          )}
+        >
+          {dayOfMonth(day.date)}
+        </span>
+        {isInactive && (
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-destructive max-sm:text-xs">
+            Inactivo
+          </span>
+        )}
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem
+          disabled={isSavingDay}
+          onClick={() => onSetInactive(day.date, !isInactive)}
+          className="max-lg:min-h-11 max-sm:text-base"
+        >
+          {isInactive ? <CalendarCheck2 /> : <CalendarX2 />}
+          {isInactive ? "Marcar como activo" : "Marcar como inactivo"}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  )
+}
+
 /**
  * Mismo horario en teléfono: un solo día (`?day=`) en una columna, con la hora
  * a la izquierda de cada bloque. Los bloques vacíos se quedan a la vista para
@@ -660,23 +783,37 @@ function DayColumn({
 function DaySchedule({
   day,
   hours,
+  dayMenu,
   ...actions
-}: AppointmentActions & { day: AgendaDay; hours: WorkingHours }) {
+}: AppointmentActions & {
+  day: AgendaDay
+  hours: WorkingHours
+  dayMenu: DayMenuActions
+}) {
   const { slots, busy, outOfHours } = layoutDay(day.items, hours)
 
   return (
     <div
       className={cn(
         "flex flex-col divide-y divide-border/70 rounded-xl",
-        day.isToday && "bg-primary/5",
+        dayTint(day),
       )}
     >
+      {/* El mismo encabezado que en escritorio: aquí se deja presionado para
+          marcar el día como inactivo. */}
+      <DayHeader
+        day={day}
+        {...dayMenu}
+        className="rounded-t-[inherit] px-3 py-2"
+      />
+
       {slots.map((slot, row) => (
         <HourBlock
           key={slot.hour}
           label={hourLabel(slot.hour)}
           items={slot.items}
           busy={busy[row]}
+          inactive={day.isInactive}
           {...actions}
         />
       ))}
@@ -699,6 +836,7 @@ function HourBlock({
   title,
   items,
   busy = false,
+  inactive = false,
   ...actions
 }: AppointmentActions & {
   label: string
@@ -706,6 +844,8 @@ function HourBlock({
   items: Appointment[]
   /** Sin citas propias, pero dentro de una que empezó antes. */
   busy?: boolean
+  /** La hora es de un día inactivo: no está libre para agendar. */
+  inactive?: boolean
 }) {
   return (
     <section className="flex items-stretch gap-3 px-3 py-2">
@@ -718,7 +858,7 @@ function HourBlock({
       <div className="flex min-h-11 flex-1 flex-col justify-center gap-2">
         {items.length === 0 ? (
           <p className="text-sm text-muted-foreground/60">
-            {busy ? "Ocupado" : "Libre"}
+            {busy ? "Ocupado" : inactive ? "Inactivo" : "Libre"}
           </p>
         ) : (
           items.map((appt) => (

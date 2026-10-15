@@ -98,6 +98,15 @@ export type CitaDTO = {
 /** `GET /citas` responds with citas grouped by `YYYY-MM-DD`. */
 export type CitasAgrupadasDTO = Record<string, CitaDTO[]>
 
+/**
+ * `GET /citas/dias-inactivos` — días (`YYYY-MM-DD`, reloj del consultorio)
+ * en que el médico no atiende, ordenados.
+ */
+export type DiasInactivosDTO = string[]
+
+/** Respuesta de `PUT`/`DELETE /citas/dias-inactivos/:fecha`. */
+export type DiaInactivoDTO = { fecha: string; inactivo: boolean }
+
 // ---- Request payloads ----
 
 export type LoginPayload = { correo: string; password: string }
