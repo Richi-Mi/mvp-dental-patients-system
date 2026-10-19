@@ -11,7 +11,7 @@ export const CLINIC_NAME = "Odontología Familiar GC"
 const MX_COUNTRY_CODE = "52"
 
 /**
- * Número en el formato que espera `wa.me` (solo dígitos, con lada de país), o
+ * Número en el formato que espera WhatsApp (solo dígitos, con lada de país), o
  * `null` si lo capturado no parece un teléfono. El teléfono es texto libre,
  * así que puede traer espacios, guiones, paréntesis o `+`.
  */
@@ -45,10 +45,29 @@ export function buildReminderMessage(
   )
 }
 
-export function whatsAppReminderUrl(phone: string, message: string): string | null {
+/**
+ * Enlaces para mandar el recordatorio por WhatsApp, con el chat y el mensaje
+ * ya escritos, o `null` si el teléfono no sirve:
+ *
+ * - `app` abre la app de WhatsApp (escritorio o celular) y, si ya está
+ *   abierta, cambia esa misma ventana al chat. Es el principal porque WhatsApp
+ *   Web no se puede reutilizar: su `Cross-Origin-Opener-Policy` corta el
+ *   vínculo con la pestaña que lo abrió y le borra el nombre, así que cada
+ *   aviso abriría una pestaña nueva aunque se le diera un `target` fijo.
+ * - `web` es el respaldo para un equipo sin la app. Va directo a WhatsApp Web,
+ *   sin la página intermedia de `wa.me`; en celulares no funciona.
+ */
+export function whatsAppReminderUrls(
+  phone: string,
+  message: string,
+): { app: string; web: string } | null {
   const number = toWhatsAppNumber(phone)
   if (!number) return null
-  return `https://wa.me/${number}?text=${encodeURIComponent(message)}`
+  const query = `phone=${number}&text=${encodeURIComponent(message)}`
+  return {
+    app: `whatsapp://send?${query}`,
+    web: `https://web.whatsapp.com/send?${query}`,
+  }
 }
 
 /** `"Recordatorio de cita - lunes 28 de septiembre de 2026, 11:00 - 12:00 h"`. */

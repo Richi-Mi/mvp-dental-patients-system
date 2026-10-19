@@ -49,7 +49,7 @@ Todas las rutas comparten el mismo formato de error: `{ "message": string }`.
 | `401` | Token ausente, inválido o expirado; o credenciales de login incorrectas. |
 | `403` | El usuario autenticado no tiene el rol requerido (`authRole("medico")`). |
 | `404` | El recurso solicitado no existe (paciente, usuario, cita, médico referenciado, etc.), o la ruta no coincide con ninguna definida. |
-| `409` | Conflicto: correo ya registrado, cita duplicada para el mismo médico/horario, o paciente que ya tiene historial clínico. |
+| `409` | Conflicto: correo ya registrado, cita que se empalma con otra del mismo médico, o paciente que ya tiene historial clínico. |
 | `422` | El `body`, la `query` o los `params` no cumplen el esquema (`t.Object(...)`) de la ruta: falta un campo requerido, un valor tiene otro tipo o está fuera de rango… Lo valida Elysia/TypeBox **antes** de llegar al controlador. |
 | `500` | Error no controlado. |
 
@@ -109,7 +109,7 @@ Formas de salida más comunes (ya sin `password` y con relaciones aplanadas). Lo
 **Cita**
 ```ts
 {
-  id: string,             // generado por el backend: `${correo_medico}_${fecha_cita.toISOString()}`
+  id: string,             // generado por el backend: `${correo_medico}_${fecha_cita.toISOString()}` (con un sufijo aleatorio si ese id ya lo usa otra cita)
   fecha_cita: Date,
   horaFin: string,        // "HH:MM" (24 h) en el reloj del consultorio (ver nota)
   motivo: string,
@@ -556,7 +556,7 @@ Crea una nueva cita para el médico autenticado.
 ```
 
 - **Respuesta `201`:** objeto `Cita` creado (`id` generado por el backend).
-- **Errores:** `422` si `horaFin` no tiene el formato `HH:MM`; `400` si no es posterior a la hora de inicio, o si el día está marcado como inactivo (ver [Días inactivos](#días-inactivos)); `404` si el paciente no existe o está inactivo; `409` si el médico ya tiene una cita registrada exactamente en ese horario.
+- **Errores:** `422` si `horaFin` no tiene el formato `HH:MM`; `400` si no es posterior a la hora de inicio, o si el día está marcado como inactivo (ver [Días inactivos](#días-inactivos)); `404` si el paciente no existe o está inactivo; `409` si el horario se empalma con otra cita del médico que no esté cancelada (comparten algún minuto: 10:00–11:00 y 11:00–12:00 no chocan, 10:01–11:01 sí). Una cita que se crea con `estatus: "cancelada"` no se valida, y una cancelada no ocupa su horario.
 
 ### `GET /citas/medico/:correo`
 
@@ -578,7 +578,7 @@ Crea una cita **a nombre del médico indicado en la URL**, no del usuario autent
 - **Params:** `correo` (`string`) — mismo criterio de validación que arriba.
 - **Body:** idéntico al de `POST /citas` (`id_paciente`, `fecha_cita`, `horaFin`, `motivo`, `estatus`).
 - **Respuesta `201`:** objeto `Cita` creado (su `id` se compone con el correo del médico de la URL).
-- **Errores:** `422` o `400` por `horaFin`, igual que en `POST /citas`; `404` si el médico o el paciente no existen; `409` si ese médico ya tiene una cita en ese horario.
+- **Errores:** `422` o `400` por `horaFin`, igual que en `POST /citas`; `404` si el médico o el paciente no existen; `409` si se empalma con otra cita de ese médico, igual que en `POST /citas`.
 
 ### `PUT /citas/medico/:correo/:id`
 
@@ -621,7 +621,7 @@ Actualiza una cita existente del médico autenticado. Todos los campos son opcio
 | `estatus` | `string` | No |
 
 - **Respuesta `200`:** objeto `Cita` actualizado.
-- **Errores:** `422` si `horaFin` no tiene el formato `HH:MM`; `400` si no queda después de la hora de inicio (la nueva, si también cambia `fecha_cita`), o si `fecha_cita` mueve la cita a **otro** día que está inactivo (una cita que ya estaba en un día inactivo se puede seguir editando ahí); `404` si la cita no existe o no pertenece al médico autenticado; `404` si el nuevo `id_paciente` no existe/está inactivo.
+- **Errores:** `422` si `horaFin` no tiene el formato `HH:MM`; `400` si no queda después de la hora de inicio (la nueva, si también cambia `fecha_cita`), o si `fecha_cita` mueve la cita a **otro** día que está inactivo (una cita que ya estaba en un día inactivo se puede seguir editando ahí); `404` si la cita no existe o no pertenece al médico autenticado; `404` si el nuevo `id_paciente` no existe/está inactivo; `409` si el horario resultante se empalma con otra cita no cancelada del médico (misma regla que en `POST /citas`). El choque solo se revisa si el horario cambia de verdad (mandar la misma `fecha_cita` y `horaFin` no cuenta) o si una cita `cancelada` pasa a otro estatus, así que dos citas que ya se empalmaban se pueden seguir editando.
 
 ### `DELETE /citas/:id`
 

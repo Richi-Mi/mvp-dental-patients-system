@@ -34,6 +34,7 @@ import {
     timeToMinutes,
     weekdayName,
 } from "@/lib/clinic-data"
+import { timeConflictMessage } from "@/lib/offline-queue"
 import { MOBILE_FAB } from "@/lib/responsive"
 import { useUiStore, type AppointmentDraft } from "@/store/ui.store"
 import type { Appointment, AppointmentStatus } from "@/types/clinic"
@@ -170,9 +171,18 @@ export function NewAppointmentDialog() {
     const invalidRange = values.endTime <= values.time
     const startMinutes = timeToMinutes(values.time) ?? hours.opening * 60
     const duration = (timeToMinutes(values.endTime) ?? 0) - startMinutes
-    // El backend solo rechaza el horario ocupado al crear la cita (ver
-    // `findTimeConflict`), así que al editar este aviso es la única red.
-    const conflict = findTimeConflict(values.date, values.time, edit?.id)
+    // El backend también rechaza el choque (409), pero así se avisa antes de
+    // guardar. Al editar, solo si cambia el horario o se reactiva una cita
+    // cancelada (ver `findConflict`).
+    const conflict = findTimeConflict(
+        {
+            date: values.date,
+            time: values.time,
+            endTime: values.endTime,
+            status: values.status,
+        },
+        editing,
+    )
     const isSaving = isCreating || isUpdating
     const saveError = edit ? updateError : createError
 
@@ -406,9 +416,7 @@ export function NewAppointmentDialog() {
                                         role="alert"
                                         className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700"
                                     >
-                                        Ya hay una cita a esa hora
-                                        {conflict.patientName ? ` (${conflict.patientName})` : ""}.
-                                        Elige otro horario.
+                                        {timeConflictMessage(conflict)}
                                     </p>
                                 )}
 

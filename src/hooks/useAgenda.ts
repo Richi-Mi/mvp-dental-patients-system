@@ -20,7 +20,14 @@ import {
     toISODateString,
     todayISO,
 } from "@/lib/clinic-data"
-import { agendaScope, applyToAppointments, citaIdFor, findConflict } from "@/lib/offline-queue"
+import {
+    agendaScope,
+    applyToAppointments,
+    citaIdFor,
+    findConflict,
+    timeConflictMessage,
+    type AppointmentSlot,
+} from "@/lib/offline-queue"
 import { queryKeys } from "@/lib/query-keys"
 import { saveOrQueue } from "@/lib/save-or-queue"
 import { useAuthStore } from "@/store/auth.store"
@@ -253,14 +260,14 @@ export function useAgenda() {
     }, [appointments, weekDays])
 
     /**
-     * Otra cita en ese día y hora, si la hay. Al crear, el backend la rechaza
-     * con un 409 (su id se arma con el horario); al **editar** no, porque la
-     * cita conserva el id con el que se creó, así que mover una cita a un
-     * horario ocupado solo se puede evitar desde aquí. Sirve también para
-     * avisar antes de encolar un cambio sin conexión (ver `findConflict`).
+     * Otra cita de la agenda cuyo horario se empalma con `slot`, si la hay;
+     * `current` es la cita que se edita (ver `findConflict`). El backend
+     * también la rechaza (409), al crear y al mover; esto avisa antes de
+     * guardar y antes de encolar un cambio sin conexión. Solo conoce la semana
+     * cargada: un choque en otra semana lo detecta el servidor.
      */
-    const findTimeConflict = (date: string, time: string, excludeId?: string) =>
-        findConflict(appointments, date, time, excludeId)
+    const findTimeConflict = (slot: AppointmentSlot, current?: Appointment) =>
+        findConflict(appointments, slot, current)
 
     const invalidate = React.useCallback(
         (patientId?: number) =>
@@ -294,11 +301,10 @@ export function useAgenda() {
                     input: cita,
                     subject: patientName ?? "",
                 },
-                // Sin conexión no hay servidor que rechace un horario ya
-                // ocupado (409 "Ya existe una cita registrada en ese
-                // horario"): se avisa aquí, contra lo que ya se conoce de esta
-                // agenda, para no encolar una cita que de todos modos no se
-                // va a poder crear. `validate` corre justo antes de encolar
+                // Sin conexión no hay servidor que rechace un horario que se
+                // empalma con otra cita (409): se avisa aquí, contra lo que ya
+                // se conoce de esta agenda, para no encolar una cita que de
+                // todos modos no se va a poder crear. `validate` corre justo antes de encolar
                 // (offline de entrada, o porque el intento real acaba de
                 // fallar por red), así que cubre ambos casos. Lo mismo con un
                 // día inactivo (400 en el backend).
@@ -306,12 +312,8 @@ export function useAgenda() {
                     if (isDayInactive(cita.date)) {
                         throw new Error(inactiveDayMessage(cita.date))
                     }
-                    const conflict = findConflict(appointments, cita.date, cita.time)
-                    if (conflict) {
-                        throw new Error(
-                            `Ya hay una cita a esa hora${conflict.patientName ? ` (${conflict.patientName})` : ""}. Elige otro horario.`,
-                        )
-                    }
+                    const conflict = findConflict(appointments, cita)
+                    if (conflict) throw new Error(timeConflictMessage(conflict))
                 },
                 optimistic: () => ({
                     id: citaIdFor(medicoCorreo, cita.date, cita.time),
@@ -353,23 +355,19 @@ export function useAgenda() {
                     subject,
                     ...(medicoEmail ? { medicoCorreo: medicoEmail } : {}),
                 },
-                // Igual que al crear: solo aplica si de verdad mueve la cita
-                // de horario (ver el comentario en `createMutation`). El día
-                // inactivo, solo si la mueve a otro día: la que ya estaba ahí
-                // se puede seguir editando, como en el backend.
+                // Igual que al crear (ver el comentario en `createMutation`):
+                // el choque solo se revisa si cambia el horario o se reactiva
+                // una cita cancelada (`findConflict`), y el día inactivo solo
+                // si la mueve a otro día: la que ya estaba ahí se puede seguir
+                // editando, como en el backend.
                 validate: () => {
-                    if (!current || (!input.date && !input.time)) return
-                    const date = input.date ?? current.date
-                    if (date !== current.date && isDayInactive(date)) {
-                        throw new Error(inactiveDayMessage(date))
+                    if (!current) return
+                    const next = { ...current, ...input }
+                    if (next.date !== current.date && isDayInactive(next.date)) {
+                        throw new Error(inactiveDayMessage(next.date))
                     }
-                    const time = input.time ?? current.time
-                    const conflict = findConflict(appointments, date, time, id)
-                    if (conflict) {
-                        throw new Error(
-                            `Ya hay una cita a esa hora${conflict.patientName ? ` (${conflict.patientName})` : ""}. Elige otro horario.`,
-                        )
-                    }
+                    const conflict = findConflict(appointments, next, current)
+                    if (conflict) throw new Error(timeConflictMessage(conflict))
                 },
                 optimistic: () => {
                     if (!current) throw new Error("Cita no encontrada")

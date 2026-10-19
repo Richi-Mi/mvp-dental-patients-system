@@ -16,6 +16,8 @@ import {
   newTempPatientId,
   replacePatientId,
   resolvePatientIds,
+  timeConflictMessage,
+  type AppointmentSlot,
   type NewOperation,
   type PendingOperation,
 } from "@/lib/offline-queue"
@@ -322,29 +324,80 @@ describe("addOperation: historial clínico", () => {
 })
 
 describe("findConflict", () => {
+  // De 14:00 a 15:00.
   const existing: Appointment = {
     id: "c1",
     patientId: 6,
     patientName: "José Ricardo",
     date: "2026-09-22",
-    time: "10:00",
-    endTime: "11:00",
-    status: "no_asistio",
+    time: "14:00",
+    endTime: "15:00",
+    status: "confirmada",
     motivo: "",
   }
-
-  test("detecta otra cita a la misma fecha y hora exactas", () => {
-    expect(findConflict([existing], "2026-09-22", "10:00")).toBe(existing)
+  const slot = (time: string, endTime: string, overrides: Partial<AppointmentSlot> = {}) => ({
+    date: "2026-09-22",
+    time,
+    endTime,
+    status: "confirmada" as const,
+    ...overrides,
   })
 
-  test("no hay conflicto en otra fecha, otra hora, o sin citas", () => {
-    expect(findConflict([existing], "2026-09-23", "10:00")).toBeUndefined()
-    expect(findConflict([existing], "2026-09-22", "11:00")).toBeUndefined()
-    expect(findConflict([], "2026-09-22", "10:00")).toBeUndefined()
+  test("detecta una cita que empieza antes de que termine otra (14:01 - 15:01)", () => {
+    expect(findConflict([existing], slot("14:01", "15:01"))).toBe(existing)
+    expect(findConflict([existing], slot("13:30", "14:30"))).toBe(existing)
   })
 
-  test("excludeId permite que una cita se mueva a la hora que ya tenía", () => {
-    expect(findConflict([existing], "2026-09-22", "10:00", "c1")).toBeUndefined()
+  test("detecta una cita idéntica, contenida en otra o que la envuelve", () => {
+    expect(findConflict([existing], slot("14:00", "15:00"))).toBe(existing)
+    expect(findConflict([existing], slot("14:15", "14:45"))).toBe(existing)
+    expect(findConflict([existing], slot("13:00", "16:00"))).toBe(existing)
+  })
+
+  test("no hay conflicto con citas seguidas, en otra fecha, o sin citas", () => {
+    expect(findConflict([existing], slot("15:00", "16:00"))).toBeUndefined()
+    expect(findConflict([existing], slot("13:00", "14:00"))).toBeUndefined()
+    expect(findConflict([existing], slot("14:00", "15:00", { date: "2026-09-23" }))).toBeUndefined()
+    expect(findConflict([], slot("14:00", "15:00"))).toBeUndefined()
+  })
+
+  test("las citas canceladas no ocupan su horario ni chocan", () => {
+    const cancelled = { ...existing, status: "cancelada" as const }
+    expect(findConflict([cancelled], slot("14:30", "15:30"))).toBeUndefined()
+    expect(findConflict([existing], slot("14:30", "15:30", { status: "cancelada" }))).toBeUndefined()
+  })
+
+  test("al editar, la cita no choca consigo misma", () => {
+    expect(findConflict([existing], slot("14:30", "15:30"), existing)).toBeUndefined()
+  })
+
+  test("al editar sin cambiar el horario no se revisa, aunque ya se empalmara con otra", () => {
+    const overlapping = { ...existing, id: "c2", time: "14:30", endTime: "15:30" }
+    expect(findConflict([existing, overlapping], slot("14:00", "15:00"), existing)).toBeUndefined()
+    expect(findConflict([existing, overlapping], slot("14:00", "15:10"), existing)).toBe(overlapping)
+  })
+
+  test("reactivar una cita cancelada que se empalma con otra sí choca", () => {
+    const cancelled = { ...existing, id: "c2", status: "cancelada" as const }
+    expect(findConflict([existing, cancelled], slot("14:00", "15:00"), cancelled)).toBe(existing)
+  })
+})
+
+describe("timeConflictMessage", () => {
+  test("indica el horario y el paciente de la otra cita", () => {
+    const conflict: Appointment = {
+      id: "c1",
+      patientId: 6,
+      patientName: "José Ricardo",
+      date: "2026-09-22",
+      time: "14:00",
+      endTime: "15:00",
+      status: "confirmada",
+      motivo: "",
+    }
+    expect(timeConflictMessage(conflict)).toBe(
+      "Se empalma con la cita de 14:00 - 15:00 (José Ricardo). Elige otro horario.",
+    )
   })
 })
 

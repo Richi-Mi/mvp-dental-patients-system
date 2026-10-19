@@ -6,7 +6,7 @@ import {
   emailReminderUrl,
   hasReminderEmail,
   toWhatsAppNumber,
-  whatsAppReminderUrl,
+  whatsAppReminderUrls,
 } from "@/lib/appointment-reminder"
 
 const appointment = {
@@ -60,10 +60,13 @@ describe("buildReminderMessage", () => {
 })
 
 describe("URLs del recordatorio", () => {
-  test("WhatsApp escapa el mensaje y usa el número normalizado", () => {
-    const url = whatsAppReminderUrl("55 1234 5678", "Hola & adiós")
-    expect(url).toBe("https://wa.me/525512345678?text=Hola%20%26%20adi%C3%B3s")
-    expect(whatsAppReminderUrl("", "Hola")).toBeNull()
+  test("WhatsApp abre la app o WhatsApp Web con el número normalizado y el mensaje escapado", () => {
+    expect(whatsAppReminderUrls("55 1234 5678", "Hola & adiós")).toEqual({
+      app: "whatsapp://send?phone=525512345678&text=Hola%20%26%20adi%C3%B3s",
+      web: "https://web.whatsapp.com/send?phone=525512345678&text=Hola%20%26%20adi%C3%B3s",
+    })
+    expect(whatsAppReminderUrls("", "Hola")).toBeNull()
+    expect(whatsAppReminderUrls("123", "Hola")).toBeNull()
   })
 
   test("Gmail abre la ventana de redactar con destinatario, asunto y cuerpo", () => {

@@ -12,8 +12,10 @@ import {
   STATUS_META,
   defaultEndTime,
   formatLongDate,
+  formatTimeRange,
   isoWeekDates,
   shiftEndTime,
+  timeToMinutes,
   todayISO,
 } from "@/lib/clinic-data"
 import { normalizeStatus, toISODateTime, toLocalISODate } from "@/lib/mappers"
@@ -426,21 +428,54 @@ export function agendaScope(
   }
 }
 
+/** Lo que decide si una cita choca con otra. */
+export type AppointmentSlot = Pick<Appointment, "date" | "time" | "endTime" | "status">
+
 /**
- * ¿Ya hay una cita a esa fecha y hora exactas? El backend arma el id de la
- * cita como `${correo_medico}_${fecha_cita}` (ver `citaIdFor`), así que un
- * médico no puede tener dos citas en el mismo horario, sean de quien sean:
- * un `POST` que choque responde 409. Sin conexión no hay quien lo valide, así
- * que `useAgenda` llama a esto antes de encolar, contra lo que ya se conoce
- * de esta agenda (servidor + cola); `excludeId` es la propia cita al moverla.
+ * Otra cita de esta agenda (servidor + cola) cuyo horario se empalma con
+ * `slot`, si la hay. Es la misma regla con que el backend responde 409 al
+ * crear o mover una cita: rangos del mismo día que comparten algún minuto (la
+ * de 10:00 a 11:00 no choca con la de 11:00 a 12:00, la de 10:01 a 11:01 sí),
+ * sin contar las canceladas, que no ocupan su horario. El diálogo la usa para
+ * avisar antes de guardar, y `useAgenda` antes de encolar un cambio sin
+ * conexión, cuando no hay servidor que lo rechace.
+ *
+ * `current` es la cita que se edita: no choca consigo misma, y si su horario
+ * no cambia y no se reactiva (de cancelada a otro estatus) no se revisa, para
+ * que dos citas que ya se empalmaban sigan editables, como en el backend.
  */
 export function findConflict(
   appointments: Appointment[],
-  date: string,
-  time: string,
-  excludeId?: string,
+  slot: AppointmentSlot,
+  current?: Appointment,
 ): Appointment | undefined {
-  return appointments.find((a) => a.date === date && a.time === time && a.id !== excludeId)
+  if (slot.status === "cancelada") return undefined
+  if (
+    current &&
+    current.status !== "cancelada" &&
+    slot.date === current.date &&
+    slot.time === current.time &&
+    slot.endTime === current.endTime
+  ) {
+    return undefined
+  }
+
+  const start = timeToMinutes(slot.time)
+  const end = timeToMinutes(slot.endTime)
+  if (start === null || end === null) return undefined
+
+  return appointments.find((a) => {
+    if (a.id === current?.id || a.status === "cancelada" || a.date !== slot.date) return false
+    const otherStart = timeToMinutes(a.time)
+    const otherEnd = timeToMinutes(a.endTime)
+    return otherStart !== null && otherEnd !== null && start < otherEnd && otherStart < end
+  })
+}
+
+/** Aviso para una cita que choca con `conflict` (ver `findConflict`). */
+export function timeConflictMessage(conflict: Appointment): string {
+  const patient = conflict.patientName ? ` (${conflict.patientName})` : ""
+  return `Se empalma con la cita de ${formatTimeRange(conflict.time, conflict.endTime)}${patient}. Elige otro horario.`
 }
 
 /** Como el `ILIKE` del backend: por nombre del paciente o motivo. */
