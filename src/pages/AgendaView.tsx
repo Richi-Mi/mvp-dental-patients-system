@@ -388,9 +388,11 @@ export function AgendaView() {
       )}
 
       {!isLoading && appointments.length === 0 && (
+        // Un solo texto (no tres nodos): si el navegador traduce la página y
+        // reescribe el DOM, React no tiene que insertar ni quitar un nodo suelto
+        // cada vez que cambia la búsqueda.
         <p className="text-center text-sm text-muted-foreground">
-          No hay citas para esta semana
-          {search.trim() ? ` que coincidan con “${search.trim()}”` : ""}.
+          {`No hay citas para esta semana${search.trim() ? ` que coincidan con “${search.trim()}”` : ""}.`}
         </p>
       )}
 
@@ -919,7 +921,7 @@ function AppointmentCard({
         )}
       >
         <span className="shrink-0 text-xs font-semibold tabular-nums whitespace-nowrap max-sm:text-base">
-          {formatTimeRange(appt.time, appt.endTime)}
+          {appt.time} horas
         </span>
         {onStatusChange ? (
           <StatusSelect

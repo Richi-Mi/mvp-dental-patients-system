@@ -1,8 +1,4 @@
-import {
-  formatDayName,
-  formatLongDate,
-  formatTimeRange,
-} from "@/lib/clinic-data"
+import { formatDayName, formatLongDate } from "@/lib/clinic-data"
 import type { Appointment, Patient } from "@/types/clinic"
 
 export const CLINIC_NAME = "Odontología Familiar GC"
@@ -27,20 +23,19 @@ export function hasReminderEmail(email: string): boolean {
 }
 
 /**
- * Texto del recordatorio, igual para WhatsApp y correo. No lleva el motivo de
- * la cita.
+ * Texto del recordatorio, igual para WhatsApp y correo. Solo lleva la hora de
+ * inicio (no la de fin) y no lleva el motivo de la cita.
  */
 export function buildReminderMessage(
   patient: Pick<Patient, "name">,
-  appointment: Pick<Appointment, "date" | "time" | "endTime">,
+  appointment: Pick<Appointment, "date" | "time">,
 ): string {
   const firstName = patient.name.trim().split(/\s+/)[0] ?? ""
   const day = formatDayName(appointment.date).toLowerCase()
   const date = formatLongDate(appointment.date)
-  const time = formatTimeRange(appointment.time, appointment.endTime)
   return (
     `Hola ${firstName}, le recordamos su próxima cita en ${CLINIC_NAME} ` +
-    `el ${day} ${date}, de ${time} h. ` +
+    `el ${day} ${date}, a las ${appointment.time} h. ` +
     "Si no puede asistir, por favor avísenos para reprogramarla. ¡Gracias!"
   )
 }
@@ -70,14 +65,13 @@ export function whatsAppReminderUrls(
   }
 }
 
-/** `"Recordatorio de cita - lunes 28 de septiembre de 2026, 11:00 - 12:00 h"`. */
+/** `"Recordatorio de cita - lunes 28 de septiembre de 2026, 11:00 h"`. */
 export function buildReminderSubject(
-  appointment: Pick<Appointment, "date" | "time" | "endTime">,
+  appointment: Pick<Appointment, "date" | "time">,
 ): string {
   const day = formatDayName(appointment.date).toLowerCase()
   const date = formatLongDate(appointment.date)
-  const time = formatTimeRange(appointment.time, appointment.endTime)
-  return `Recordatorio de cita - ${day} ${date}, ${time} h`
+  return `Recordatorio de cita - ${day} ${date}, ${appointment.time} h`
 }
 
 /**
@@ -89,7 +83,7 @@ export function buildReminderSubject(
 export function emailReminderUrl(
   email: string,
   message: string,
-  appointment: Pick<Appointment, "date" | "time" | "endTime">,
+  appointment: Pick<Appointment, "date" | "time">,
 ): string | null {
   if (!hasReminderEmail(email)) return null
   const params = new URLSearchParams({

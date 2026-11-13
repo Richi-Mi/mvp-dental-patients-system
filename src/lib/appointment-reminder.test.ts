@@ -44,12 +44,13 @@ describe("hasReminderEmail", () => {
 })
 
 describe("buildReminderMessage", () => {
-  test("incluye el primer nombre, el día, la fecha y el horario", () => {
+  test("incluye el primer nombre, el día, la fecha y la hora de inicio", () => {
     const msg = buildReminderMessage({ name: "Ana López" }, appointment)
     expect(msg).toContain("Hola Ana,")
     expect(msg).toContain("martes")
     expect(msg).toContain("29 de septiembre de 2026")
-    expect(msg).toContain("11:00 - 12:00 h")
+    expect(msg).toContain("a las 11:00 h")
+    expect(msg).not.toContain("12:00")
   })
 
   test("no incluye el motivo de la cita", () => {
@@ -81,9 +82,9 @@ describe("URLs del recordatorio", () => {
 })
 
 describe("buildReminderSubject", () => {
-  test("el asunto lleva la fecha y el horario de la cita", () => {
+  test("el asunto lleva la fecha y la hora de inicio de la cita", () => {
     expect(buildReminderSubject(appointment)).toBe(
-      "Recordatorio de cita - martes 29 de septiembre de 2026, 11:00 - 12:00 h",
+      "Recordatorio de cita - martes 29 de septiembre de 2026, 11:00 h",
     )
   })
 })
